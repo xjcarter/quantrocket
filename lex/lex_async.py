@@ -5,6 +5,7 @@ from quantrocket.realtime import collect_market_data
 import asyncio
 from posmgr import PosMgr, TradeSide
 import calendar_calcs
+from indicators import MondayAnchor
 import os
 
 
@@ -16,7 +17,6 @@ import os
 account = "YOUR_ACCOUNT_NAME"
 
 YAHOO_DATA_DIRECTORY = os.environment.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
-
 
 START_TIME = "09:25"
 OPEN_TIME = "09:30"
@@ -37,8 +37,9 @@ def load_historical_data(symbol):
         raise e 
 
 def place_entry(symbol, data):
-    ## load in calendar
-    ## return True False to trade
+
+    execute_entry = False 
+
     daysback = 20
     holidays = calendar_calcs.load_holidays()
     anchor = MondayAnchor(derived_len=days_back)
@@ -46,32 +47,43 @@ def place_entry(symbol, data):
     ss = len(data)
     if ss < daysback:
         raise RuntimeError(f'Not enoungh data points for {symbol}: len={ss}, daysback={daysback}')
-        continue
 
+    today = datetime.today().date()
     gg = stock_df[-days_back:]
+    end_of_week = calendar_calcs.is_end_of_week(today, holidays)
 
+    last_indicator_date = None
     for i in range(gg.shape[0]):
         idate = gg.index[i]
         stock_bar = gg.loc[idate]
         cur_dt = datetime.strptime(idate,"%Y-%m-%d").date()
+        anchor.push((cur_dt, stock_bar))
+        last_indicator_date = cur_dt
 
-        tt = anchor.push((cur_dt, stock_bar))
-        if tt is not None:
-            anchor_bar, mp = tt
-            anchor_low = anchor_bar['Low']
+    ## get make sure the siganl is for the previous trading day
+    if last_indicator_date != calendar_calcs.prev_trading_day(today, holidays):
+        raise RuntimeError(f'incomplete data for indicators, last_indicator_date: {last_indicator_date}') 
 
-    ## FIX This 
-    cc = corr.valueAt(0)
-    bb = beta.valueAt(0)
+    if anchor.count() > 0:
+        anchor_bar, bkout = anchor.valueAt(0)
+        if bkout < 0 and end_of_week == False:
+            execute_entry = True
 
-   
+    return execute_entry 
 
 
 
 def place_exit(current_price, entry_price, duration):
-    ## load in calendar
-    ## load in MondayAnchor 
-    ## return True False to trade
+    
+    execute_exit = False
+
+    if ( current_price > entry_price ) or
+       ( duration > MAX_HOLD_PERIOD )  or
+       ( (entry_price - current_price) > stdv ): 
+        execute_exit = True 
+
+    return execute_exit
+    
 
 def create_order(side, amount, symbol):
     # Create a market order to buy 100 shares of SPY
