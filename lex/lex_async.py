@@ -5,7 +5,7 @@ from quantrocket.realtime import collect_market_data
 import asyncio
 from posmgr import PosMgr, TradeSide
 import calendar_calcs
-from indicators import MondayAnchor
+from indicators import MondayAnchor, StDev
 import os
 
 
@@ -23,6 +23,9 @@ OPEN_TIME = "09:30"
 EXIT_TIME = "15:55"
 EOD_TIME = "16:30"
 
+MAX_HOLD_PERIOD = 9
+
+
 def time_until(date_string):
     now = datetime.now()
     return schedutils.seconds_until(now, date_string) 
@@ -34,19 +37,23 @@ def load_historical_data(symbol):
         stock_df = pandas.read_csv(stock_file)
         stock_df.set_index('Date', inplace=True)
     except Exception as e:
-        raise e 
+        raise e
 
-def place_entry(symbol, data):
+    return stock_df
 
-    execute_entry = False 
 
-    daysback = 20
+def calc_metrics(data):
+
+    valid_entry = False
+
+    daysback = 50
     holidays = calendar_calcs.load_holidays()
-    anchor = MondayAnchor(derived_len=days_back)
+    anchor = MondayAnchor(derived_len=daysback)
+    stdev = StDev(sample_size=daysback)
 
     ss = len(data)
     if ss < daysback:
-        raise RuntimeError(f'Not enoungh data points for {symbol}: len={ss}, daysback={daysback}')
+        raise RuntimeError(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
 
     today = datetime.today().date()
     gg = stock_df[-days_back:]
@@ -57,7 +64,8 @@ def place_entry(symbol, data):
         idate = gg.index[i]
         stock_bar = gg.loc[idate]
         cur_dt = datetime.strptime(idate,"%Y-%m-%d").date()
-        anchor.push((cur_dt, stock_bar))
+        anchor.push((cur_dt, stock_bar))a
+        stdev.push(stock_bar['Close'])
         last_indicator_date = cur_dt
 
     ## get make sure the siganl is for the previous trading day
@@ -67,22 +75,25 @@ def place_entry(symbol, data):
     if anchor.count() > 0:
         anchor_bar, bkout = anchor.valueAt(0)
         if bkout < 0 and end_of_week == False:
-            execute_entry = True
+            valid_entry = True
 
-    return execute_entry 
+    return valid_entry, stdev.valueAt(0) 
 
 
 
-def place_exit(current_price, entry_price, duration):
-    
-    execute_exit = False
+def check_exit(position_node, stdv):
 
-    if ( current_price > entry_price ) or
-       ( duration > MAX_HOLD_PERIOD )  or
-       ( (entry_price - current_price) > stdv ): 
-        execute_exit = True 
+    current_pos, entry_price = position_node.position, position_node.price
+    current_price = get_current_price(position_node.symbol)
 
-    return execute_exit
+    get_out = False
+    if current_pos > 0:
+        if ( current_price > entry_price ) or
+           ( duration > MAX_HOLD_PERIOD )  or
+           ( (entry_price - current_price) > 2*stdv ): 
+            get_out = True 
+
+    return get_out, current_pos
     
 
 def create_order(side, amount, symbol):
@@ -118,7 +129,7 @@ def calc_trade_amount(symbol, trade_capital, fudge_factor=1):
     current_price = get_current_price(symbol)
     return int( (trade_capital * fudge_factor)/current_price )
 
-async def handle_trade_fills():
+async def handle_trade_fills( position_mgr ):
     ## handle fills and post all files through PosMgr object
     ## handle trade fills only stays up for 30 min
 
@@ -175,14 +186,15 @@ async def main(strategy_id, universe):
     current_pos = position_node.position
 
     data = load_historical_data(symbol)
+    fire_entry, stdv = calc_metrics(data)
     
     start_time, secs_until_start = time_until(START_TIME)
     await asyncio.sleep(secs_until_start)
 
-    if current_pos == 0 and place_entry(symbol, data):
+    if current_pos == 0 and fire_entry:
         trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
         if trade_amt > 0:
-            asyncio.create_task(handle_trade_fills)
+            asyncio.create_task( handle_trade_fills(pmgr) )
             open_time, secs_until_open = time_until(OPEN_TIME)
             await asyncio.sleep(secs_until_open)
             entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt)
@@ -191,10 +203,9 @@ async def main(strategy_id, universe):
     await asyncio.sleep(secs_until_exit)
 
     position_node = pmgr.get_position(symbol)
-    current_pos, duration = position_node.position, position_node.duration
-    current_price = get_current_price()
-    if current_pos > 0 and place_exit(current_price, entry_price, duration)
-        asyncio.create_task(handle_trade_fills)
+    fire_exit, current_pos = check_exit(position_node, stdv)
+    if fire_exit: 
+        asyncio.create_task( handle_trade_fills(pmgr) )
         exit_tkt = create_order(TradeSide.SELL, symbol, current_pos)
 
     eod_time, secs_until_eod = time_until(EOD_TIME)
