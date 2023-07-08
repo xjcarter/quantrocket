@@ -18,12 +18,15 @@ account = "YOUR_ACCOUNT_NAME"
 
 YAHOO_DATA_DIRECTORY = os.environment.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
 
+POS_MGR = PosMgr()
+
 START_TIME = "09:25"
 OPEN_TIME = "09:30"
 EXIT_TIME = "15:55"
 EOD_TIME = "16:30"
 
 MAX_HOLD_PERIOD = 9
+
 
 
 def time_until(date_string):
@@ -129,38 +132,36 @@ def calc_trade_amount(symbol, trade_capital, fudge_factor=1):
     current_price = get_current_price(symbol)
     return int( (trade_capital * fudge_factor)/current_price )
 
-async def handle_trade_fills( position_mgr ):
+
+async def handle_trade_fills():
     ## handle fills and post all files through PosMgr object
     ## handle trade fills only stays up for 30 min
+
+    ## map quantrocket order fill
+    def _convert_quantrocket_order(order):
+        trd = Trade(order['orderId'])
+        trd.asset = order["symbol"]
+        trd.exchange = order["exchange"]
+        trd.side = TradeSide.SELL if order["action"] == 'SELL' else TradeSide.BUY
+        trd.units = abs(order["filled"])
+        trd.price = order["avgFillPrice"]
+        trd.commission = order["commission"]
+        return trd
 
     counter = 0 
     FETCH_WINDOW = 1800 
     while counter < FETCH_WINDOW
         # Get the order statuses
+        ## FIX THIS - ensure that same fills don't remain in this list.
+        ## add a 'processed' list
         statuses = order_statuses(account=account)
 
         filled_orders = [status for status in statuses if status["status"] == "filled"]
 
         for order in filled_orders:
             # Capture the filled order details
-            order_id = order["orderId"]
-            symbol = order["symbol"]
-            exchange = order["exchange"]
-            side = order["action"]
-            quantity = order["filled"]
-            price = order["avgFillPrice"]
-            commission = order["commission"]
-
-            print("Order ID:", order_id)
-            print("Symbol:", symbol)
-            print("Exchange:", exchange)
-            print("Side:", side)
-            print("Quantity:", quantity)
-            print("Price:", price)
-            print("Commission:", commission)
-
-        ## FIX 
-        ## update positions 
+            print(f'Processing order_id: {order["orderId"]')
+            POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_order )
 
         counter += 1
         # Sleep for 1 second before checking for new filled orders
@@ -169,20 +170,23 @@ async def handle_trade_fills( position_mgr ):
 
 async def main(strategy_id, universe):
 
-    pmgr = PosMgr(strategy_id=strategy_id, universe=universe)
-    pmgr.load_all()
+    global POS_MGR
 
-    pp = pmgr.position_count()
+    POS_MGR.strategy_id = strategy_id
+    POS_MGR.universe = set(universe)
+    POS_MGR.load_all()
+
+    pp = POS_MGR.position_count()
     if pp == 0:
         raise RuntimeError(f'No targeted positions for universe: {universe}')
     if pp != 1:
-        raise RuntimeError(f'Too many names: {pmgr.positions} - this a single name strategy')
+        raise RuntimeError(f'Too many names: {POS_MGR.positions} - this a single name strategy')
 
     ## grab the only instrument in the universe
     symbol = universe[0]
 
     ## returns a PosNode object
-    position_node = pmgr.get_position(symbol)
+    position_node = POS_MGR.get_position(symbol)
     current_pos = position_node.position
 
     data = load_historical_data(symbol)
@@ -194,7 +198,7 @@ async def main(strategy_id, universe):
     if current_pos == 0 and fire_entry:
         trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
         if trade_amt > 0:
-            asyncio.create_task( handle_trade_fills(pmgr) )
+            asyncio.create_task( handle_trade_fills() )
             open_time, secs_until_open = time_until(OPEN_TIME)
             await asyncio.sleep(secs_until_open)
             entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt)
@@ -202,10 +206,10 @@ async def main(strategy_id, universe):
     exit_time, secs_until_exit = time_until(EXIT_TIME)
     await asyncio.sleep(secs_until_exit)
 
-    position_node = pmgr.get_position(symbol)
+    position_node = POS_MGR.get_position(symbol)
     fire_exit, current_pos = check_exit(position_node, stdv)
     if fire_exit: 
-        asyncio.create_task( handle_trade_fills(pmgr) )
+        asyncio.create_task( handle_trade_fills() )
         exit_tkt = create_order(TradeSide.SELL, symbol, current_pos)
 
     eod_time, secs_until_eod = time_until(EOD_TIME)

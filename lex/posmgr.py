@@ -89,9 +89,10 @@ class Trade(object):
         self.asset = None
         self.units = 0
         self.price = 0
-        self.commissions = 0
+        self.commission = 0
         self.fees = 0 
         self.broker = None
+        self.exchange = None
         self.timestamp = None
 
     def to_dict(self):
@@ -118,16 +119,19 @@ class Trade(object):
         return new_trade
     
     def convert_timestamp(self, timestamp):
-        ## FIX THIS
+        self.timestamp = timestamp.strftime('%Y%m%d-%H%M%S')
+
+    def stamp_timestamp(self):
         now = datetime.now()
-        self.timestamp = now.strftime("%Y%m%d-%H%M%S")
+        self.timestamp = now.strftime('%Y%m%d-%H%M%S')
+    
 
 
 
 class PosMgr(object):
-    def __init__(self, strategy_id, universe):
-        self.strategy_id = strategy_id
-        self.universe = set(universe) 
+    def __init__(self):
+        self.strategy_id = None
+        self.universe = None 
 
         ## current names to trade w/ current positions
         self.positions = []
@@ -139,7 +143,6 @@ class PosMgr(object):
         self.trade_capital = 0
         ## trades
         self.trades = []
-
 
     def position_count(self):
         return len(self.positions)
@@ -496,7 +499,7 @@ class PosMgr(object):
 
     ## take a new trade and update positions 
     ## and update position and trade files
-    def update_trades(self, trade_string):
+    def update_trades(self, trade_object, conversion_func=None):
 
         def _convert_trade(trade_string):
             ##FIX this
@@ -506,14 +509,17 @@ class PosMgr(object):
             cols = [ 'trade_id', 'strategy_id', 'side', 'asset', 'units', 'price' ]
             t_obj = Trade()
             t_obj.from_dict( dict(zip(cols, vals)) ) 
-            t_obj.convert_timestamp("fake_stime")
+            t_obj.stamp_timestamp()
 
             return t_obj
 
-        print(f'processing trade: {trade_string}')
-        trade_obj = _convert_trade(trade_string)
+        if conversion_func == None:
+            conversion_func = _convert_trade
+
+        trade_obj = conversion_func(trade_object)
         self.trades.append(trade_obj)
-        print(f'trade: {trade_obj.trade_id} captured.')
+        trade_dump = json.dumps(trade_obj.__dict__, ensure_ascii=False, indent=4)
+        print(f'captured trade: {trade_dump}')
 
         ## NOTE: trade_obj.units is ALWAYS > 0
 
@@ -531,7 +537,9 @@ class PosMgr(object):
 
 if __name__ == "__main__":
     
-    pmgr = PosMgr(strategy_id='Strategy1', universe=['AAPL','SPY','QQQ'])
+    pmgr = PosMgr()
+    pmgr.strategy_id = 'Strategy1'
+    pmgr.universe = ['AAPL','SPY','QQQ']
 
     ## set date to look for previous positions
     ## by default this will be set to previous trade date base on us_trading calendar
