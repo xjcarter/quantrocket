@@ -15,7 +15,7 @@ import calendar_calcs
 ## 
 
 
-PORTFOLIO_DIRECTORY = '/home/jcarter/junk/portfolio/'
+PORTFOLIO_DIRECTORY = os.environ.get('PORTFOLIO_DIRECTORY', '/home/jcarter/junk/portfolio/')
 
 class TradeSide(str, Enum):
     BUY = 'BUY'
@@ -140,6 +140,15 @@ class PosMgr(object):
         ## trades
         self.trades = []
 
+
+    def position_count(self):
+        return len(self.positions)
+
+    def get_position(self, symbol):
+        for pos_node in self.positions:
+            if pos_node.symbol == symbol:
+                return pos_node
+        return None
 
     def get_previous_trade_date(self):
         today = datetime.today()
@@ -532,6 +541,7 @@ if __name__ == "__main__":
 
     fake_trade = '12513, Strategy1, BUY, SPY, 50, 419.00'
     pmgr.update_trades(fake_trade)
+
     #fake_trade = '12511, Strategy1, SELL, SPY, 43, 461.66'
     #pmgr.update_trades(fake_trade)
     #fake_trade = '12511, Strategy1, BUY, SPY, 120, 470.66'
