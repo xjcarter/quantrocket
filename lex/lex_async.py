@@ -9,6 +9,17 @@ from indicators import MondayAnchor, StDev
 import os
 import uuid
 
+import logging
+# Create a logger specific to __main__ module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s',
+                    datefmt='%a %Y-%m-%d %H:%M:%S')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
 
 # Connect to QuantRocket
 # Make sure you have a running QuantRocket deployment
@@ -40,7 +51,7 @@ def load_historical_data(symbol):
         stock_file = f'{YAHOO_DATA_DIRECTORY}/{symbol}.csv'
         stock_df = pandas.read_csv(stock_file)
         stock_df.set_index('Date', inplace=True)
-        print(f'{symbol} historical data loaded.'}
+        logger.info(f'{symbol} historical data loaded.'}
     except Exception as e:
         raise e
 
@@ -58,7 +69,7 @@ def calc_metrics(data):
 
     ss = len(data)
     if ss < daysback:
-        print(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
+        logger.error(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
         raise RuntimeError(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
 
     today = datetime.today().date()
@@ -78,14 +89,14 @@ def calc_metrics(data):
 
     ## make sure the signal is for the previous trading day
     if last_indicator_date != calendar_calcs.prev_trading_day(today, holidays):
-        print(f'incomplete data for indicators, last_indicator_date: {last_indicator_date}') 
+        logger.error(f'incomplete data for indicators, last_indicator_date: {last_indicator_date}') 
         raise RuntimeError(f'incomplete data for indicators, last_indicator_date: {last_indicator_date}') 
 
     ldate = last_indicator_date.strftime("%Y%m%d %a")
     if anchor.count() > 0:
         anchor_bar, bkout = anchor.valueAt(0)
         ## show last indcator date, anchor bar and close
-        print(f'>>> {ldate}: A:{anchor_bar}, C:{last_close}')
+        logger.info(f'>>> {ldate}: A:{anchor_bar}, C:{last_close}')
         if bkout < 0 and end_of_week == False:
             valid_entry = True
 
@@ -112,8 +123,8 @@ def check_exit(position_node, stdv):
             alert = 'STOP ON CLOSE'
             get_out = True 
 
-    print('check_exit: exit= {get_out}, {position_node.symbol}, {current_pos}')
-    print('exit_details: {tag}  current_price= {current_price}, entry= {entry_price}, duration= {duration}')
+    logger.info('check_exit: exit= {get_out}, {position_node.symbol}, {current_pos}')
+    logger.info('exit_details: {tag}  current_price= {current_price}, entry= {entry_price}, duration= {duration}')
     return get_out, current_pos
     
 
@@ -139,13 +150,13 @@ def create_order(side, amount, symbol, strategy_id):
         "quantity": amount 
     }
 
-    print('sending order.')
+    logger.info('sending order.')
 
     # Place the order
     ib_order_id = _new_order_id(strategy_id) 
     ticket = OrderStatuses.submit_order(order, ib_order_id)
-    print(f'order {ib_order_id}: {ticket} submitted.')
-    print(json.dumps(order, ensure_ascii=False, indent =4 ))
+    logger.info(f'order {ib_order_id}: {ticket} submitted.')
+    logger.info(json.dumps(order, ensure_ascii=False, indent =4 ))
 
     return ticket 
 
@@ -158,7 +169,7 @@ def get_current_bid_ask(symbol):
     # Extract the bid and ask prices for SPY
     bid_price = prices.loc[symbol, "Bid"]
     ask_price = prices.loc[symbol, "Ask"]
-    print(f'current bid/ask for {symbol}: bid:{bid_price}, ask:{ask_price}')
+    logger.info(f'current bid/ask for {symbol}: bid:{bid_price}, ask:{ask_price}')
 
     return bid_price, ask_price
 
@@ -203,7 +214,7 @@ async def handle_trade_fills():
         filled_orders = [status for status in statuses if status["status"] == "filled"]
 
         for order in filled_orders:
-            print(f'Processing order_id: {order["orderId"]}')
+            logger.info(f'Processing order_id: {order["orderId"]}')
             POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_order )
 
         counter += 1
@@ -236,28 +247,28 @@ async def main(strategy_id, universe):
     fire_entry, stdv = calc_metrics(data)
     
     start_time, secs_until_start = time_until(START_TIME)
-    print(f'sleeping until {start_time.strftime("%Y%m%d-%H:%M:%S")} START.')
+    logger.info(f'sleeping until {start_time.strftime("%Y%m%d-%H:%M:%S")} START.')
     await asyncio.sleep(secs_until_start)
-    print(f'*** START ***')
+    logger.info(f'*** START ***')
 
     if current_pos == 0:
         trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
         if fire_entry and trade_amt > 0:
             open_time, secs_until_open = time_until(OPEN_TIME)
-            print(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
+            logger.info(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
             await asyncio.sleep(secs_until_open)
-            print(f'*** SENDING TRADE ON OPEN ***')
+            logger.info(f'*** SENDING TRADE ON OPEN ***')
             asyncio.create_task( handle_trade_fills() )
             entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt, strategy_id)
         else:
-            print('warning: entry triggered but trade_amt == 0!')
+            logger.warning('entry triggered but trade_amt == 0!')
     else:
-        print(f'no trade: working open position: {symbol} {current_pos}')
+        logger.info(f'no trade: working open position: {symbol} {current_pos}')
 
     exit_time, secs_until_exit = time_until(EXIT_TIME)
-    print(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} CLOSE.')
+    logger.info(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} CLOSE.')
     await asyncio.sleep(secs_until_exit)
-    print(f'*** CHECKING CLOSE ***')
+    logger.info(f'*** CHECKING CLOSE ***')
 
     position_node = POS_MGR.get_position(symbol)
     fire_exit, current_pos = check_exit(position_node, stdv)
@@ -266,9 +277,9 @@ async def main(strategy_id, universe):
         exit_tkt = create_order(TradeSide.SELL, symbol, current_pos, strategy_id)
 
     eod_time, secs_until_eod = time_until(EOD_TIME)
-    print(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')
+    logger.info(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')
     await asyncio.sleep(secs_until_eod)
-    print(f'*** END OF DAY ***')
+    logger.info(f'*** END OF DAY ***')
 
 
 if __name__ == "__main__":
