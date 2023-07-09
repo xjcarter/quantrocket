@@ -15,7 +15,7 @@ import uuid
 # and have configured the necessary credentials
 
 # Set the account
-account = "YOUR_ACCOUNT_NAME"
+IB_ACCOUNT_NAME = "YOUR_ACCOUNT_NAME"
 
 YAHOO_DATA_DIRECTORY = os.environment.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
 
@@ -66,21 +66,26 @@ def calc_metrics(data):
     end_of_week = calendar_calcs.is_end_of_week(today, holidays)
 
     last_indicator_date = None
+    last_close = None
     for i in range(gg.shape[0]):
         idate = gg.index[i]
         stock_bar = gg.loc[idate]
         cur_dt = datetime.strptime(idate,"%Y-%m-%d").date()
-        anchor.push((cur_dt, stock_bar))a
+        anchor.push((cur_dt, stock_bar))
         stdev.push(stock_bar['Close'])
         last_indicator_date = cur_dt
+        last_close = stock_bar['Close']
 
-    ## get make sure the siganl is for the previous trading day
+    ## make sure the signal is for the previous trading day
     if last_indicator_date != calendar_calcs.prev_trading_day(today, holidays):
         print(f'incomplete data for indicators, last_indicator_date: {last_indicator_date}') 
         raise RuntimeError(f'incomplete data for indicators, last_indicator_date: {last_indicator_date}') 
 
+    ldate = last_indicator_date.strftime("%Y%m%d %a")
     if anchor.count() > 0:
         anchor_bar, bkout = anchor.valueAt(0)
+        ## show last indcator date, anchor bar and close
+        print(f'>>> {ldate}: A:{anchor_bar}, C:{last_close}')
         if bkout < 0 and end_of_week == False:
             valid_entry = True
 
@@ -95,14 +100,20 @@ def check_exit(position_node, stdv):
     current_price = get_current_price(position_node.symbol)
 
     get_out = False
+    alert = 'NO_EXIT'
     if current_pos > 0:
-        if ( current_price > entry_price ) or
-           ( duration > MAX_HOLD_PERIOD )  or
-           ( (entry_price - current_price) > stdv * 2 ): 
+        if current_price > entry_price:
+            alert = 'PNL'
+            get_out = True
+        elif duration > MAX_HOLD_PERIOD:
+            alert = 'EXPIRY'
+            get_out = True
+        elif (entry_price - current_price) > stdv * 2: 
+            alert = 'STOP ON CLOSE'
             get_out = True 
 
     print('check_exit: exit= {get_out}, {position_node.symbol}, {current_pos}')
-    print('exit_details: current_price= {current_price}, entry= {entry_price}, duration= {duration}')
+    print('exit_details: {tag}  current_price= {current_price}, entry= {entry_price}, duration= {duration}')
     return get_out, current_pos
     
 
@@ -187,12 +198,12 @@ async def handle_trade_fills():
     FETCH_WINDOW = 1800   ## 30min
 
     while counter < FETCH_WINDOW
-        statuses = order_statuses(account=account)
+        statuses = order_statuses(account=IB_ACCOUNT_NAME)
 
         filled_orders = [status for status in statuses if status["status"] == "filled"]
 
         for order in filled_orders:
-            print(f'Processing order_id: {order["orderId"]')
+            print(f'Processing order_id: {order["orderId"]}')
             POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_order )
 
         counter += 1
@@ -229,15 +240,19 @@ async def main(strategy_id, universe):
     await asyncio.sleep(secs_until_start)
     print(f'*** START ***')
 
-    if current_pos == 0 and fire_entry:
+    if current_pos == 0:
         trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
-        if trade_amt > 0:
-            asyncio.create_task( handle_trade_fills() )
+        if fire_entry and trade_amt > 0:
             open_time, secs_until_open = time_until(OPEN_TIME)
             print(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
             await asyncio.sleep(secs_until_open)
             print(f'*** SENDING TRADE ON OPEN ***')
+            asyncio.create_task( handle_trade_fills() )
             entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt, strategy_id)
+        else:
+            print('warning: entry triggered but trade_amt == 0!')
+    else:
+        print(f'no trade: working open position: {symbol} {current_pos}')
 
     exit_time, secs_until_exit = time_until(EXIT_TIME)
     print(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} CLOSE.')
