@@ -1,7 +1,7 @@
 import schedutils
 from datetime import datetime
 from quantrocket.blotter import order_statuses, OrderStatuses
-from quantrocket.realtime import collect_market_data
+from quantrocket.realtime import get_prices 
 import asyncio
 from posmgr import PosMgr, TradeSide, Trade
 import calendar_calcs
@@ -27,12 +27,12 @@ EXIT_TIME = "15:55"
 EOD_TIME = "16:30"
 
 MAX_HOLD_PERIOD = 9
-EXECUTION_SPREAD = 0.01  ## average spread for the symbol traded
 
 
 def time_until(date_string):
     now = datetime.now()
     return schedutils.seconds_until(now, date_string) 
+
 
 def load_historical_data(symbol):
     ## load yahoo OHLC data
@@ -139,13 +139,30 @@ def create_order(side, amount, symbol, strategy_id):
     return ticket 
 
 
+def get_current_bid_ask(symbol):
+
+    fields = ["Bid", "Ask"]
+    prices = get_prices([symbol], fields)
+
+    # Extract the bid and ask prices for SPY
+    bid_price = prices.loc[symbol, "Bid"]
+    ask_price = prices.loc[symbol, "Ask"]
+    print(f'current bid/ask for {symbol}: bid:{bid_price}, ask:{ask_price}')
+
+    return bid_price, ask_price
+
 def get_current_price(symbol):
-    ## FIX THIS
-    ## get current realtime price
+    bid, ask = get_current_bid_ask(symbol)
+    return 0.5 * (bid + ask)
+
 
 def calc_trade_amount(symbol, trade_capital):
-    current_price = get_current_price(symbol)
-    return int( (trade_capital/(current_price + EXECUTION_SPREAD) )
+    bid, ask = get_current_bid_ask(symbol)
+    spread = abs(bid - ask)
+
+    ## we can get more creative with this by monitoring spread
+    ## in realtime and using an average spread...
+    return int( (trade_capital/(ask+spread)) )
 
 
 async def handle_trade_fills():
