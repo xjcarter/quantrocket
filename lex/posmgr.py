@@ -8,6 +8,18 @@ from enum import Enum
 import mysql.connector
 import calendar_calcs
 
+import logging
+# Create a logger specific to __main__ module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s',
+                    datefmt='%a %Y-%m-%d %H:%M:%S')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+
 ##
 ## position node for each name traded
 ## all nodes are saved to a state file to be loaded and updated by the trading engine each day
@@ -192,7 +204,7 @@ class PosMgr(object):
         total_allocation = 0
         if len(sorted_files) > 0:
             most_recent_file = sorted_files[-1]
-            print(f'position file: {most_recent_file}')
+            logger.info(f'position file: {most_recent_file}')
             file_path = os.path.join(directory, most_recent_file)
             with open(file_path, 'r') as file:
                 pos_json = json.load(file)
@@ -223,7 +235,7 @@ class PosMgr(object):
                 total_allocation = pos_json.get('total_allocation',0)
 
         else:
-            print(f'warning: No matching position files found in {directory} for strategy_id: {self.strategy_id}.')
+            logger.warning(f'no matching position files found in {directory} for strategy_id: {self.strategy_id}.')
 
         return pos_map, alloc_nodes, total_allocation
 
@@ -279,7 +291,7 @@ class PosMgr(object):
         # Create a cursor to execute SQL queries
         cursor = connection.cursor()
 
-        print(f'alert: fetching new capital available for {self.strategy_id}')
+        logger.info(f'alert: fetching new capital available for {self.strategy_id}')
 
         # Perform the join query
         ## FIX IT - add timestamp to AccountValue table - shows last update and MTM time.
@@ -298,9 +310,9 @@ class PosMgr(object):
         if results:
             for row in results:
                 account_id, cash, timestamp = row
-                print(f"{strategy_id}: accountId: {account_id}, cash: {cash}, timestamp: {timestamp}")
+                logger.info(f"{strategy_id}: accountId: {account_id}, cash: {cash}, timestamp: {timestamp}")
         else:
-            print(f"No accounts found for strategyId '{strategy_id}'.")
+            logger.info(f"No accounts found for strategyId '{strategy_id}'.")
 
         # Close the cursor and connection
         cursor.close()
@@ -316,7 +328,7 @@ class PosMgr(object):
             total_cash += float(cash)
             alloc_nodes.append(alloc_node)
 
-        print(f"{strategy_id}: trade_capital: {total_cash}")
+        logger.info(f"{strategy_id}: trade_capital: {total_cash}")
         return alloc_nodes, total_cash
 
 
@@ -349,37 +361,38 @@ class PosMgr(object):
                     open_positions += abs(open_node.position)
                 else:
                     ## map returned multiple pos nodes for a specific name
-                    print(f'warning: duplicate positions found for {name}.')
-                    print(json.dumps(pos_nodes, ensure_ascii=False, indent =4 ))
+                    logger.warning(f'duplicate positions found for {name}.')
+                    logger.warning(json.dumps(pos_nodes, ensure_ascii=False, indent =4 ))
        
         if len(newbies) > 0:
-            print(f'created following new position nodes:')
+            logger.info(f'created following new position nodes:')
             nn = [ x.to_dict() for x in newbies ]
-            print(json.dumps(nn, ensure_ascii=False, indent=4))
+            logger.info(json.dumps(nn, ensure_ascii=False, indent=4))
 
         if len(self.positions) > 0:
-            print(f'current position nodes:')
+            logger.info(f'current position nodes:')
             oo = [ x.to_dict() for x in self.positions ]
-            print(json.dumps(oo, ensure_ascii=False, indent=4))
+            logger.info(json.dumps(oo, ensure_ascii=False, indent=4))
 
             
         ## position names in position file - but not in current universe
         zombies = set(pos_map.keys()).difference(self.universe)
         if len(zombies) > 0:
-            print(f'universe loaded = {self.universe}')
-            print('warning: zombie positions not in current universe found.')
+            logger.warning(f'universe loaded = {self.universe}')
+            logger.warning('zombie positions not in current universe found.')
             zz = []
             for name in zombies:
                 zombie_nodes = pos_map.get(name)
                 zz.extend(zombie_nodes.to_dict())
-            print(json.dumps(zz, ensure_ascii=False, indent =4 ))
+            logger.warning(json.dumps(zz, ensure_ascii=False, indent =4 ))
+
 
         ## check allocations 
         if open_positions != 0:
             self.trade_capital = 0
-            print('alert: using previous allocations on open positions')
+            logger.info('using previous allocations on open positions')
             if len(alloc_nodes) > 0:
-                print(json.dumps(alloc_nodes, ensure_ascii=False, indent=4))
+                logger.info(json.dumps(alloc_nodes, ensure_ascii=False, indent=4))
                 converted_allocs = []
                 for alloc in alloc_nodes:
                     aa= AllocNode(alloc['account_id'])
@@ -387,7 +400,7 @@ class PosMgr(object):
                 alloc_nodes = converted_allocs
                 self.trade_capital = total_allocation
             else:
-                print('error: no allocations posted for open positions')
+                logger.error('no allocations posted for open positions')
         else:
             ## fetch new allocations 
             ## for a clean slate of zero positions 
@@ -422,7 +435,7 @@ class PosMgr(object):
             s = json.dumps(pp, ensure_ascii=False, indent =4 )
             f.write(s + '\n')
 
-        print(f'{position_file} updated')
+        logger.info(f'{position_file} updated')
 
 
     def write_trades(self, now):
@@ -442,7 +455,7 @@ class PosMgr(object):
             s = json.dumps(tt, ensure_ascii=False, indent =4 )
             f.write(s + '\n')
 
-        print(f'{trade_file} updated')
+        logger.info(f'{trade_file} updated')
 
     def update_positions(self, pos_node, trade_obj):
 
@@ -523,7 +536,7 @@ class PosMgr(object):
 
         if new_trade:
             self.trades.append(trade_obj)
-            print(f'captured trade: {trade_dump}')
+            logger.info(f'captured trade: {trade_dump}')
 
             ## NOTE: trade_obj.units is ALWAYS > 0
 
@@ -537,7 +550,7 @@ class PosMgr(object):
             self.write_positions(now)
             self.write_trades(now)
         else:
-            print(f'rejecting duplicate trade: {trade_dump}')
+            logger.critical(f'rejecting duplicate trade: {trade_dump}')
 
 
 
@@ -551,7 +564,7 @@ if __name__ == "__main__":
     ## by default this will be set to previous trade date base on us_trading calendar
     pmgr.load_all()
 
-    print(pmgr.positions)
+    logger.info(pmgr.positions)
 
     fake_trade = '12513, Strategy1, BUY, SPY, 50, 419.00'
     pmgr.update_trades(fake_trade)
