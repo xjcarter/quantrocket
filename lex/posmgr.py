@@ -126,8 +126,6 @@ class Trade(object):
         self.timestamp = now.strftime('%Y%m%d-%H%M%S')
     
 
-
-
 class PosMgr(object):
     def __init__(self):
         self.strategy_id = None
@@ -517,21 +515,29 @@ class PosMgr(object):
             conversion_func = _convert_trade
 
         trade_obj = conversion_func(trade_object)
-        self.trades.append(trade_obj)
         trade_dump = json.dumps(trade_obj.__dict__, ensure_ascii=False, indent=4)
-        print(f'captured trade: {trade_dump}')
 
-        ## NOTE: trade_obj.units is ALWAYS > 0
+        ## make sure you are not re-processing the same trade
+        processed_trade_ids = [ x['trade_id'] for x in self.trades ]
+        new_trade = trade_obj.trade_id not in processed_trade_ids 
 
-        for idx, pos_node in enumerate(self.positions):
-            if pos_node.name == trade_obj.asset:
-                new_node, new_detail = self.update_positions(pos_node, trade_obj) 
-                self.position_detail.append(new_detail)
-                self.positions[idx] = new_node
+        if new_trade:
+            self.trades.append(trade_obj)
+            print(f'captured trade: {trade_dump}')
 
-        now = datetime.now()
-        self.write_positions(now)
-        self.write_trades(now)
+            ## NOTE: trade_obj.units is ALWAYS > 0
+
+            for idx, pos_node in enumerate(self.positions):
+                if pos_node.name == trade_obj.asset:
+                    new_node, new_detail = self.update_positions(pos_node, trade_obj) 
+                    self.position_detail.append(new_detail)
+                    self.positions[idx] = new_node
+
+            now = datetime.now()
+            self.write_positions(now)
+            self.write_trades(now)
+        else:
+            print(f'rejecting duplicate trade: {trade_dump}')
 
 
 

@@ -3,10 +3,11 @@ from datetime import datetime
 from quantrocket.blotter import order_statuses, OrderStatuses
 from quantrocket.realtime import collect_market_data
 import asyncio
-from posmgr import PosMgr, TradeSide
+from posmgr import PosMgr, TradeSide, Trade
 import calendar_calcs
 from indicators import MondayAnchor, StDev
 import os
+import uuid
 
 
 # Connect to QuantRocket
@@ -26,7 +27,7 @@ EXIT_TIME = "15:55"
 EOD_TIME = "16:30"
 
 MAX_HOLD_PERIOD = 9
-
+EXECUTION_SPREAD = 0.01  ## average spread for the symbol traded
 
 
 def time_until(date_string):
@@ -39,6 +40,7 @@ def load_historical_data(symbol):
         stock_file = f'{YAHOO_DATA_DIRECTORY}/{symbol}.csv'
         stock_df = pandas.read_csv(stock_file)
         stock_df.set_index('Date', inplace=True)
+        print(f'{symbol} historical data loaded.'}
     except Exception as e:
         raise e
 
@@ -56,6 +58,7 @@ def calc_metrics(data):
 
     ss = len(data)
     if ss < daysback:
+        print(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
         raise RuntimeError(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
 
     today = datetime.today().date()
@@ -73,6 +76,7 @@ def calc_metrics(data):
 
     ## get make sure the siganl is for the previous trading day
     if last_indicator_date != calendar_calcs.prev_trading_day(today, holidays):
+        print(f'incomplete data for indicators, last_indicator_date: {last_indicator_date}') 
         raise RuntimeError(f'incomplete data for indicators, last_indicator_date: {last_indicator_date}') 
 
     if anchor.count() > 0:
@@ -87,19 +91,29 @@ def calc_metrics(data):
 def check_exit(position_node, stdv):
 
     current_pos, entry_price = position_node.position, position_node.price
+    duration = position_node.duration
     current_price = get_current_price(position_node.symbol)
 
     get_out = False
     if current_pos > 0:
         if ( current_price > entry_price ) or
            ( duration > MAX_HOLD_PERIOD )  or
-           ( (entry_price - current_price) > 2*stdv ): 
+           ( (entry_price - current_price) > stdv * 2 ): 
             get_out = True 
 
+    print('check_exit: exit= {get_out}, {position_node.symbol}, {current_pos}')
+    print('exit_details: current_price= {current_price}, entry= {entry_price}, duration= {duration}')
     return get_out, current_pos
     
 
-def create_order(side, amount, symbol):
+def create_order(side, amount, symbol, strategy_id):
+
+    def _new_order_id(tag):
+        # Generate a unique order ID with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        unique_id = str(uuid.uuid4())
+        return f"{tag}_{timestamp}_{unique_id}"
+
     # Create a market order to buy 100 shares of SPY
     order = {
         "account": account,
@@ -111,35 +125,39 @@ def create_order(side, amount, symbol):
         },
         "orderType": "MKT",
         "action": TradeSide.BUY,
-        "quantity": int(amount) 
+        "quantity": amount 
     }
 
+    print('sending order.')
+
     # Place the order
-    ib_order_id = "YOUR_IB_ORDER_ID"  # Provide the IB order ID
+    ib_order_id = _new_order_id(strategy_id) 
     ticket = OrderStatuses.submit_order(order, ib_order_id)
+    print(f'order {ib_order_id}: {ticket} submitted.')
+    print(json.dumps(order, ensure_ascii=False, indent =4 ))
 
     return ticket 
 
 
 def get_current_price(symbol):
+    ## FIX THIS
     ## get current realtime price
 
-def calc_trade_amount(symbol, trade_capital, fudge_factor=1):
-    ## FIX THIS 
-    ## get current price 
-    ## problem: how to do handle price moving away from current price before fill?
-    ## currently using fudge factor <= 1 to handle problem
+def calc_trade_amount(symbol, trade_capital):
     current_price = get_current_price(symbol)
-    return int( (trade_capital * fudge_factor)/current_price )
+    return int( (trade_capital/(current_price + EXECUTION_SPREAD) )
 
 
 async def handle_trade_fills():
+
+    global POS_MGR
+
     ## handle fills and post all files through PosMgr object
     ## handle trade fills only stays up for 30 min
 
     ## map quantrocket order fill
     def _convert_quantrocket_order(order):
-        trd = Trade(order['orderId'])
+        trd = Trade( order['orderId'] )
         trd.asset = order["symbol"]
         trd.exchange = order["exchange"]
         trd.side = TradeSide.SELL if order["action"] == 'SELL' else TradeSide.BUY
@@ -149,17 +167,14 @@ async def handle_trade_fills():
         return trd
 
     counter = 0 
-    FETCH_WINDOW = 1800 
+    FETCH_WINDOW = 1800   ## 30min
+
     while counter < FETCH_WINDOW
-        # Get the order statuses
-        ## FIX THIS - ensure that same fills don't remain in this list.
-        ## add a 'processed' list
         statuses = order_statuses(account=account)
 
         filled_orders = [status for status in statuses if status["status"] == "filled"]
 
         for order in filled_orders:
-            # Capture the filled order details
             print(f'Processing order_id: {order["orderId"]')
             POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_order )
 
@@ -193,27 +208,35 @@ async def main(strategy_id, universe):
     fire_entry, stdv = calc_metrics(data)
     
     start_time, secs_until_start = time_until(START_TIME)
+    print(f'sleeping until {start_time.strftime("%Y%m%d-%H:%M:%S")} START.')
     await asyncio.sleep(secs_until_start)
+    print(f'*** START ***')
 
     if current_pos == 0 and fire_entry:
         trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
         if trade_amt > 0:
             asyncio.create_task( handle_trade_fills() )
             open_time, secs_until_open = time_until(OPEN_TIME)
+            print(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
             await asyncio.sleep(secs_until_open)
-            entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt)
+            print(f'*** SENDING TRADE ON OPEN ***')
+            entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt, strategy_id)
 
     exit_time, secs_until_exit = time_until(EXIT_TIME)
+    print(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} CLOSE.')
     await asyncio.sleep(secs_until_exit)
+    print(f'*** CHECKING CLOSE ***')
 
     position_node = POS_MGR.get_position(symbol)
     fire_exit, current_pos = check_exit(position_node, stdv)
     if fire_exit: 
         asyncio.create_task( handle_trade_fills() )
-        exit_tkt = create_order(TradeSide.SELL, symbol, current_pos)
+        exit_tkt = create_order(TradeSide.SELL, symbol, current_pos, strategy_id)
 
     eod_time, secs_until_eod = time_until(EOD_TIME)
+    print(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')
     await asyncio.sleep(secs_until_eod)
+    print(f'*** END OF DAY ***')
 
 
 if __name__ == "__main__":
