@@ -1,7 +1,8 @@
 import schedutils
 from datetime import datetime
-from quantrocket.realtime import get_prices 
-from quantrocket.blotter import place_order, download_executions
+#from quantrocket.realtime import get_prices 
+#from quantrocket.blotter import place_order, download_executions
+from test_harness import place_order, download_executions, get_prices
 import asyncio
 from posmgr import PosMgr, TradeSide, Trade
 import calendar_calcs
@@ -304,4 +305,3 @@ async def main(strategy_id, universe):
 if __name__ == "__main__":
     asyncio.run( main(u.strategy_id, universe=universe) )
 
-    
