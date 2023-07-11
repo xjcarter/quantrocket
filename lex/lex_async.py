@@ -1,7 +1,7 @@
 import schedutils
 from datetime import datetime
-from quantrocket.blotter import order_statuses, OrderStatuses
 from quantrocket.realtime import get_prices 
+from quantrocket.blotter import place_order, download_executions
 import asyncio
 from posmgr import PosMgr, TradeSide, Trade
 import calendar_calcs
@@ -137,28 +137,29 @@ def create_order(side, amount, symbol, strategy_id):
         return f"{tag}_{timestamp}_{unique_id}"
 
     # Create a market order to buy 100 shares of SPY
+
     order = {
-        "account": account,
-        "contract": {
-            "symbol": symbol.upper(),
-            "exchange": "SMART",
-            "currency": "USD",
-            "secType": "STK"
-        },
-        "orderType": "MKT",
+        "account": "YOUR_ACCOUNT",
+        "symbol": "SPY",
+        "quantity": 100,
         "action": TradeSide.BUY,
-        "quantity": amount 
+        "order_type": "MKT"
     }
 
     logger.info('sending order.')
 
     # Place the order
-    ib_order_id = _new_order_id(strategy_id) 
-    ticket = OrderStatuses.submit_order(order, ib_order_id)
-    logger.info(f'order {ib_order_id}: {ticket} submitted.')
+
+    #legacy submission
+    #ib_order_id = _new_order_id(strategy_id) 
+    #ticket = OrderStatuses.submit_order(order, ib_order_id)
+
+    #order_id = place_order(account, symbol, quantity, action, order_type)
+    order_id = place_order(**order)
+    logger.info(f'order_id: {order_id} submitted.')
     logger.info(json.dumps(order, ensure_ascii=False, indent =4 ))
 
-    return ticket 
+    return order_id 
 
 
 def get_current_bid_ask(symbol):
@@ -194,27 +195,45 @@ async def handle_trade_fills():
     ## handle fills and post all files through PosMgr object
     ## handle trade fills only stays up for 30 min
 
+    """
+    Here are some common fields that you may typically find in the executions DataFrame:
+
+    OrderRef: The reference or ID of the order associated with the execution.
+    Symbol: The symbol or ticker of the instrument being traded.
+    Exchange: The exchange where the execution occurred.
+    Quantity: The quantity of the executed order.
+    Side: The side of the executed order (Buy or Sell).
+    Price: The execution price.
+    Currency: The currency of the traded instrument.
+    ExecutionTime: The timestamp of the execution.
+    Account: The account associated with the execution.
+    Strategy: The strategy or algorithm associated with the execution.
+
+    """
+
     ## map quantrocket order fill
     def _convert_quantrocket_order(order):
-        trd = Trade( order['orderId'] )
-        trd.asset = order["symbol"]
-        trd.exchange = order["exchange"]
-        trd.side = TradeSide.SELL if order["action"] == 'SELL' else TradeSide.BUY
-        trd.units = abs(order["filled"])
-        trd.price = order["avgFillPrice"]
-        trd.commission = order["commission"]
+        trd = Trade( order['OrderRef'] )
+        trd.asset = order["Symbol"]
+        trd.exchange = order["Exchange"]
+        trd.side = TradeSide.SELL if order["Side"] == 'SELL' else TradeSide.BUY
+        trd.units = abs(order["Quantity"])
+        trd.price = order["Price"]
+        #trd.commission = order["commission"]
+        trd.timestamp = order["ExecutionTime"]
         return trd
 
     counter = 0 
     FETCH_WINDOW = 1800   ## 30min
 
-    while counter < FETCH_WINDOW
-        statuses = order_statuses(account=IB_ACCOUNT_NAME)
+    start_date = end_date = datetime.today.date()
 
-        filled_orders = [status for status in statuses if status["status"] == "filled"]
+    while counter < FETCH_WINDOW
+
+        filled_orders = download_executions(start_date, end_date, accounts=IB_ACCOUNT_NAME)
 
         for order in filled_orders:
-            logger.info(f'Processing order_id: {order["orderId"]}')
+            logger.info(f'Processing order_id: {order["OrderRef"]}')
             POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_order )
 
         counter += 1
