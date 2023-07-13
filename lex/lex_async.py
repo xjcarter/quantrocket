@@ -52,12 +52,12 @@ def load_historical_data(symbol):
         stock_file = f'{YAHOO_DATA_DIRECTORY}/{symbol}.csv'
         stock_df = pandas.read_csv(stock_file)
         stock_df.set_index('Date', inplace=True)
-        logger.info(f'{symbol} historical data loaded.'}
+        logger.info(f'{symbol} historical data loaded.')
     except Exception as e:
         raise e
     
     ## alter data for testing 
-    stock_df = test_harness.alter_data_to_anchor(stock_df, alter_close=-0.03)
+    stock_df = test_harness.alter_data_to_anchor(stock_df, adjust_close=-0.03)
 
     return stock_df
 
