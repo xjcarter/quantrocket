@@ -112,7 +112,7 @@ def place_order(account, symbol, quantity, action, order_type):
 
 
 #filled_orders = download_executions(start_date, end_date, accounts=IB_ACCOUNT_NAME)
-def download_executions(start_date, end_date, account):
+def download_executions(start_date, end_date, accounts):
     global order_queue
 
     rq = order_queue[:]

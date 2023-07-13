@@ -2,7 +2,6 @@ import schedutils
 from datetime import datetime
 #from quantrocket.realtime import get_prices 
 #from quantrocket.blotter import place_order, download_executions
-import test_harness
 import asyncio
 from posmgr import PosMgr, TradeSide, Trade
 import calendar_calcs
@@ -33,7 +32,7 @@ YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/wor
 
 POS_MGR = PosMgr()
 
-START_TIME = "09:25"
+START_TIME = "09:28"
 OPEN_TIME = "09:30"
 EXIT_TIME = "15:55"
 EOD_TIME = "16:30"
@@ -57,7 +56,7 @@ def load_historical_data(symbol):
         raise e
     
     ## alter data for testing 
-    stock_df = test_harness.alter_data_to_anchor(stock_df, adjust_close=-0.03)
+    stock_df = test_harness.alter_data_to_anchor(stock_df, alter_close=-0.03)
 
     return stock_df
 
@@ -71,13 +70,13 @@ def calc_metrics(stock_df):
     anchor = MondayAnchor(derived_len=daysback)
     stdev = StDev(sample_size=daysback)
 
-    ss = len(stock_df)
+    ss = len(data)
     if ss < daysback:
         logger.error(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
         raise RuntimeError(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
 
     today = datetime.today().date()
-    gg = stock_df[-daysback:]
+    gg = stock_df[-days_back:]
     end_of_week = calendar_calcs.is_end_of_week(today, holidays)
 
     last_indicator_date = None
@@ -107,33 +106,13 @@ def calc_metrics(stock_df):
     return valid_entry, stdev.valueAt(0) 
 
 
-def get_current_bid_ask(symbol):
-
-    fields = ["Bid", "Ask"]
-    #prices = get_prices([symbol], fields)
-    prices = test_harness.get_prices([symbol], fields)
-
-    # Extract the bid and ask prices for SPY
-    bid_price = prices.loc[symbol, "Bid"]
-    ask_price = prices.loc[symbol, "Ask"]
-    logger.info(f'current bid/ask for {symbol}: bid:{bid_price}, ask:{ask_price}')
-
-    return bid_price, ask_price
-
-def get_current_price(symbol):
-    bid, ask = get_current_bid_ask(symbol)
-    avg_price = 0.5 * (bid + ask)
-    logger.info(f'current avg_price for {symbol}: {avg_price}')
-    return avg_price
-
 
 def check_exit(position_node, stdv):
 
     current_pos, entry_price = position_node.position, position_node.price
     duration = position_node.duration
     test_harness.price_skew = 0.10
-    current_price = test_harness.get_current_price(position_node.name)
-    #current_price = get_current_price(position_node.name)
+    current_price = get_current_price(position_node.symbol)
 
     get_out = False
     alert = 'NO_EXIT'
@@ -148,21 +127,18 @@ def check_exit(position_node, stdv):
             alert = 'STOP ON CLOSE'
             get_out = True 
 
-    logger.info(f'check_exit: exit= {get_out}, {position_node.name}, {current_pos}')
-    logger.info(f'exit_details: {position_node.name}, alert= {alert} current_price= {current_price}, entry= {entry_price}, duration= {duration}')
+    logger.info('check_exit: exit= {get_out}, {position_node.symbol}, {current_pos}')
+    logger.info('exit_details: {tag}  current_price= {current_price}, entry= {entry_price}, duration= {duration}')
     return get_out, current_pos
     
 
 def create_order(side, amount, symbol, strategy_id):
 
-    def _new_order_id(tag=None):
+    def _new_order_id(tag):
         # Generate a unique order ID with timestamp
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         unique_id = str(uuid.uuid4())
-        if tag is not None:
-            return f"{tag}-{unique_id}-{timestamp}"
-        else:
-            return f"{unique_id}-{timestamp}"
+        return f"{tag}_{timestamp}_{unique_id}"
 
     # Create a market order to buy 100 shares of SPY
 
@@ -170,7 +146,7 @@ def create_order(side, amount, symbol, strategy_id):
         "account": "YOUR_ACCOUNT",
         "symbol": "SPY",
         "quantity": 100,
-        "action": TradeSide.BUY.value,
+        "action": TradeSide.BUY,
         "order_type": "MKT"
     }
 
@@ -191,6 +167,26 @@ def create_order(side, amount, symbol, strategy_id):
     return order_id 
 
 
+def get_current_bid_ask(symbol):
+
+    fields = ["Bid", "Ask"]
+    #prices = get_prices([symbol], fields)
+    prices = test_harness.get_prices([symbol], fields)
+
+    # Extract the bid and ask prices for SPY
+    bid_price = prices.loc[symbol, "Bid"]
+    ask_price = prices.loc[symbol, "Ask"]
+    logger.info(f'current bid/ask for {symbol}: bid:{bid_price}, ask:{ask_price}')
+
+    return bid_price, ask_price
+
+def get_current_price(symbol):
+    bid, ask = get_current_bid_ask(symbol)
+    avg_price = 0.5 * (bid + ask)
+    logger.info(f'current avg_price for {symbol}: {avg_price}')
+    return avg_price
+
+
 
 def calc_trade_amount(symbol, trade_capital):
     bid, ask = get_current_bid_ask(symbol)
@@ -198,121 +194,49 @@ def calc_trade_amount(symbol, trade_capital):
 
     ## we can get more creative with this by monitoring spread
     ## in realtime and using an average spread...
-    return int( trade_capital/(ask+spread) )
+    return int( (trade_capital/(ask+spread)) )
 
 
 async def handle_trade_fills():
 
-    global POS_MGR
-
-    ## handle fills and post all files through PosMgr object
-    ## handle trade fills only stays up for 30 min
-
-    """
-    Here are some common fields that you may typically find in the executions DataFrame:
-
-    OrderRef: The reference or ID of the order associated with the execution.
-    Symbol: The symbol or ticker of the instrument being traded.
-    Exchange: The exchange where the execution occurred.
-    Quantity: The quantity of the executed order.
-    Side: The side of the executed order (Buy or Sell).
-    Price: The execution price.
-    Currency: The currency of the traded instrument.
-    ExecutionTime: The timestamp of the execution.
-    Account: The account associated with the execution.
-    Strategy: The strategy or algorithm associated with the execution.
-
-    """
-
-    ## map quantrocket order fill
-    def _convert_quantrocket_order(order):
-        trd = Trade( order['OrderRef'] )
-        trd.asset = order["Symbol"]
-        trd.exchange = order["Exchange"]
-        trd.side = TradeSide.SELL if order["Side"] == 'SELL' else TradeSide.BUY
-        trd.units = abs(order["Quantity"])
-        trd.price = order["Price"]
-        #trd.commission = order["commission"]
-        trd.timestamp = order["ExecutionTime"]
-        return trd
+    logger.info('handle_fills_start') 
 
     counter = 0 
-    FETCH_WINDOW = 1800   ## 30min
-
-    start_date = end_date = datetime.today().date()
+    FETCH_WINDOW = 60  ## 30min
 
     while counter < FETCH_WINDOW:
-
-        #filled_orders = download_executions(start_date, end_date, accounts=[IB_ACCOUNT_NAME])
-        filled_orders = test_harness.download_executions(start_date, end_date, accounts=[IB_ACCOUNT_NAME])
-
-        for order in filled_orders:
-            logger.info(f'Processing order_id: {order["OrderRef"]}')
-            POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_order )
+        
+        logger.info(f'Processing potential orders')
 
         counter += 1
-        # Sleep for 1 second before checking for new filled orders
-        await asyncio.sleep(1)
+        # Sleep for 20 seconds before checking for new filled orders
+        await asyncio.sleep(20)
+
+    logger.info('handle_fill_end') 
 
 
 async def main(strategy_id, universe):
 
-    global POS_MGR
-
-    POS_MGR.strategy_id = strategy_id
-    POS_MGR.universe = set(universe)
-    POS_MGR.load_all()
-
-    pp = POS_MGR.position_count()
-    if pp == 0:
-        raise RuntimeError(f'No targeted positions for universe: {universe}')
-    if pp != 1:
-        raise RuntimeError(f'Too many names: {POS_MGR.positions} - this a single name strategy')
-
-    ## grab the only instrument in the universe
-    symbol = universe[0]
-
-    ## returns a PosNode object
-    position_node = POS_MGR.get_position(symbol)
-    current_pos = position_node.position
-
-    data = load_historical_data(symbol)
-    fire_entry, stdv = calc_metrics(data)
-    
+    logger.info('start main')
     start_time, secs_until_start = time_until(START_TIME)
     logger.info(f'sleeping until {start_time.strftime("%Y%m%d-%H:%M:%S")} START.')
     await asyncio.sleep(secs_until_start)
     logger.info(f'*** START ***')
 
-    if current_pos == 0:
-        trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
-        if fire_entry and trade_amt > 0:
-            open_time, secs_until_open = time_until(OPEN_TIME)
-            logger.info(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
-            await asyncio.sleep(secs_until_open)
-            logger.info(f'*** SENDING TRADE ON OPEN ***')
-
-            test_harness.price_skew = 0
-            open_price = get_current_price(position_node.name)
-
-            logger.info(f'opening price: {open_price}')
-            asyncio.create_task( handle_trade_fills() )
-            entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt, strategy_id)
-        else:
-            logger.warning('entry triggered but trade_amt == 0!')
-    else:
-        logger.info(f'no trade: working open position: {symbol} {current_pos}')
+    open_time, secs_until_open = time_until(OPEN_TIME)
+    logger.info(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
+    await asyncio.sleep(secs_until_open)
+    logger.info(f'*** SENDING TRADE ON OPEN ***')
 
     exit_time, secs_until_exit = time_until(EXIT_TIME)
-    logger.info(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} CLOSE.')
+    logger.info(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} EXIT.')
     await asyncio.sleep(secs_until_exit)
+    logger.info(f'*** ENTERED EXIT WINDOW ``***')
     logger.info(f'*** CHECKING CLOSE ***')
 
-    position_node = POS_MGR.get_position(symbol)
-    fire_exit, current_pos = check_exit(position_node, stdv)
+    fire_exit = True
     if fire_exit: 
         asyncio.create_task( handle_trade_fills() )
-        exit_tkt = create_order(TradeSide.SELL, symbol, current_pos, strategy_id)
 
     eod_time, secs_until_eod = time_until(EOD_TIME)
     logger.info(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')
@@ -321,5 +245,5 @@ async def main(strategy_id, universe):
 
 
 if __name__ == "__main__":
-    asyncio.run( main(u.strategy_id, universe=universe) )
+    asyncio.run( main('12345', ['SPY']) )
 
