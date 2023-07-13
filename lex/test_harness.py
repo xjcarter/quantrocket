@@ -1,7 +1,8 @@
 import pandas
 import uuid
-from random import randint
 import json
+import os
+from datetime import datetime
 
 import logging
 # Create a logger specific to __main__ module
@@ -19,7 +20,7 @@ order_queue = list()
 price_skew = 0
 ref_price = None
 
-YAHOO_DATA_DIRECTORY = os.environment.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
+YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
 
 
 ## force yesterday's close to be above/below the current anchor
@@ -40,7 +41,7 @@ def alter_data_to_anchor(stock_df, adjust_close=0):
         anchor.push((cur_dt, stock_bar))
         last_index = idate
 
-    anchor_bar = anchor.valueAt(0)
+    anchor_bar, _ = anchor.valueAt(0)
     ref_price = anchor_bar['Low'] + adjust_close
     stock_df.at[last_index,'Close'] = ref_price
 
@@ -55,7 +56,7 @@ bid_price = prices.loc[symbol, "Bid"]
 ask_price = prices.loc[symbol, "Ask"]
 price_skew = a testing parameter that allows me to control the next 'print' relative to the last get_prices request
 """
-def get_prices(symbol_list, field):
+def get_prices(symbol_list, fields):
     global ref_price 
     global price_skew
 
@@ -65,10 +66,16 @@ def get_prices(symbol_list, field):
     logger.info(f'new ref_price = {ref_price}')
     bid, ask = ref_price - 0.1, ref_price
     logger.info(f'bid: {bid}, ask: {ask}')
-    df = pandas.DataFrame(columns=['symbol','Bid','Ask'],data=[symbol, bid, ask])
+    df = pandas.DataFrame(columns=['symbol','Bid','Ask'],data=[[symbol, bid, ask]])
     df.set_index('symbol', inplace=True)
 
     return df
+
+def get_current_price(symbol):
+    prices = get_prices([symbol], ['Bid', 'Ask'])
+    bid_price = prices.loc[symbol, "Bid"]
+    ask_price = prices.loc[symbol, "Ask"]
+    return 0.5 * (bid_price + ask_price)
 
 
 #order_id = place_order(account, symbol, quantity, action, order_type)
@@ -91,9 +98,9 @@ def place_order(account, symbol, quantity, action, order_type):
         "symbol": symbol,
         "quantity": quantity,
         "action": action,
-        "order_type": order_type
-        "OrderRef": unique_id
-        "timestamp": timestamp
+        "order_type": order_type,
+        "OrderRef": unique_id,
+        "timestamp": timestamp,
         "price": ref_price  
     }
 

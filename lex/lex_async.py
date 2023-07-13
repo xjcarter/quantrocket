@@ -71,13 +71,13 @@ def calc_metrics(stock_df):
     anchor = MondayAnchor(derived_len=daysback)
     stdev = StDev(sample_size=daysback)
 
-    ss = len(data)
+    ss = len(stock_df)
     if ss < daysback:
         logger.error(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
         raise RuntimeError(f'Not enoungh data to calc metrics: len={ss}, daysback={daysback}')
 
     today = datetime.today().date()
-    gg = stock_df[-days_back:]
+    gg = stock_df[-daysback:]
     end_of_week = calendar_calcs.is_end_of_week(today, holidays)
 
     last_indicator_date = None
@@ -107,13 +107,33 @@ def calc_metrics(stock_df):
     return valid_entry, stdev.valueAt(0) 
 
 
+def get_current_bid_ask(symbol):
+
+    fields = ["Bid", "Ask"]
+    #prices = get_prices([symbol], fields)
+    prices = test_harness.get_prices([symbol], fields)
+
+    # Extract the bid and ask prices for SPY
+    bid_price = prices.loc[symbol, "Bid"]
+    ask_price = prices.loc[symbol, "Ask"]
+    logger.info(f'current bid/ask for {symbol}: bid:{bid_price}, ask:{ask_price}')
+
+    return bid_price, ask_price
+
+def get_current_price(symbol):
+    bid, ask = get_current_bid_ask(symbol)
+    avg_price = 0.5 * (bid + ask)
+    logger.info(f'current avg_price for {symbol}: {avg_price}')
+    return avg_price
+
 
 def check_exit(position_node, stdv):
 
     current_pos, entry_price = position_node.position, position_node.price
     duration = position_node.duration
     test_harness.price_skew = 0.10
-    current_price = get_current_price(position_node.symbol)
+    current_price = test_harness.get_current_price(position_node.name)
+    #current_price = get_current_price(position_node.name)
 
     get_out = False
     alert = 'NO_EXIT'
@@ -128,8 +148,8 @@ def check_exit(position_node, stdv):
             alert = 'STOP ON CLOSE'
             get_out = True 
 
-    logger.info('check_exit: exit= {get_out}, {position_node.symbol}, {current_pos}')
-    logger.info('exit_details: {tag}  current_price= {current_price}, entry= {entry_price}, duration= {duration}')
+    logger.info(f'check_exit: exit= {get_out}, {position_node.name}, {current_pos}')
+    logger.info(f'exit_details: {position_node.name}, alert= {alert} current_price= {current_price}, entry= {entry_price}, duration= {duration}')
     return get_out, current_pos
     
 
@@ -166,26 +186,6 @@ def create_order(side, amount, symbol, strategy_id):
     logger.info(json.dumps(order, ensure_ascii=False, indent =4 ))
 
     return order_id 
-
-
-def get_current_bid_ask(symbol):
-
-    fields = ["Bid", "Ask"]
-    #prices = get_prices([symbol], fields)
-    prices = test_harness.get_prices([symbol], fields)
-
-    # Extract the bid and ask prices for SPY
-    bid_price = prices.loc[symbol, "Bid"]
-    ask_price = prices.loc[symbol, "Ask"]
-    logger.info(f'current bid/ask for {symbol}: bid:{bid_price}, ask:{ask_price}')
-
-    return bid_price, ask_price
-
-def get_current_price(symbol):
-    bid, ask = get_current_bid_ask(symbol)
-    avg_price = 0.5 * (bid + ask)
-    logger.info(f'current avg_price for {symbol}: {avg_price}')
-    return avg_price
 
 
 
@@ -290,7 +290,7 @@ async def main(strategy_id, universe):
             logger.info(f'*** SENDING TRADE ON OPEN ***')
 
             test_harness.price_skew = 0
-            open_price = get_current_price(position_node.symbol)
+            open_price = get_current_price(position_node.name)
 
             logger.info(f'opening price: {open_price}')
             asyncio.create_task( handle_trade_fills() )
