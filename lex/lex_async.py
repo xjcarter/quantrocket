@@ -2,7 +2,7 @@ import schedutils
 from datetime import datetime
 #from quantrocket.realtime import get_prices 
 #from quantrocket.blotter import place_order, download_executions
-from test_harness import place_order, download_executions, get_prices
+import test_harness
 import asyncio
 from posmgr import PosMgr, TradeSide, Trade
 import calendar_calcs
@@ -55,11 +55,14 @@ def load_historical_data(symbol):
         logger.info(f'{symbol} historical data loaded.'}
     except Exception as e:
         raise e
+    
+    ## alter data for testing 
+    stock_df = test_harness.alter_data_to_anchor(stock_df, alter_close=-0.03)
 
     return stock_df
 
 
-def calc_metrics(data):
+def calc_metrics(stock_df):
 
     valid_entry = False
 
@@ -109,6 +112,7 @@ def check_exit(position_node, stdv):
 
     current_pos, entry_price = position_node.position, position_node.price
     duration = position_node.duration
+    test_harness.price_skew = 0.10
     current_price = get_current_price(position_node.symbol)
 
     get_out = False
@@ -156,7 +160,8 @@ def create_order(side, amount, symbol, strategy_id):
     #ticket = OrderStatuses.submit_order(order, ib_order_id)
 
     #order_id = place_order(account, symbol, quantity, action, order_type)
-    order_id = place_order(**order)
+    #order_id = place_order(**order)
+    order_id = test_harness.place_order(**order)
     logger.info(f'order_id: {order_id} submitted.')
     logger.info(json.dumps(order, ensure_ascii=False, indent =4 ))
 
@@ -166,7 +171,8 @@ def create_order(side, amount, symbol, strategy_id):
 def get_current_bid_ask(symbol):
 
     fields = ["Bid", "Ask"]
-    prices = get_prices([symbol], fields)
+    #prices = get_prices([symbol], fields)
+    prices = test_harness.get_prices([symbol], fields)
 
     # Extract the bid and ask prices for SPY
     bid_price = prices.loc[symbol, "Bid"]
@@ -177,7 +183,10 @@ def get_current_bid_ask(symbol):
 
 def get_current_price(symbol):
     bid, ask = get_current_bid_ask(symbol)
-    return 0.5 * (bid + ask)
+    avg_price = 0.5 * (bid + ask)
+    logger.info(f'current avg_price for {symbol}: {avg_price}')
+    return avg_price
+
 
 
 def calc_trade_amount(symbol, trade_capital):
@@ -231,7 +240,8 @@ async def handle_trade_fills():
 
     while counter < FETCH_WINDOW
 
-        filled_orders = download_executions(start_date, end_date, accounts=IB_ACCOUNT_NAME)
+        #filled_orders = download_executions(start_date, end_date, accounts=IB_ACCOUNT_NAME)
+        filled_orders = test_harness.download_executions(start_date, end_date, accounts=IB_ACCOUNT_NAME)
 
         for order in filled_orders:
             logger.info(f'Processing order_id: {order["OrderRef"]}')
@@ -278,6 +288,11 @@ async def main(strategy_id, universe):
             logger.info(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
             await asyncio.sleep(secs_until_open)
             logger.info(f'*** SENDING TRADE ON OPEN ***')
+
+            test_harness.price_skew = 0
+            open_price = get_current_price(position_node.symbol)
+
+            logger.info(f'opening price: {open_price}')
             asyncio.create_task( handle_trade_fills() )
             entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt, strategy_id)
         else:
