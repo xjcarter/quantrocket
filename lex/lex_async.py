@@ -29,7 +29,7 @@ logger.addHandler(console_handler)
 # Set the account
 IB_ACCOUNT_NAME = "YOUR_ACCOUNT_NAME"
 
-YAHOO_DATA_DIRECTORY = os.environment.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
+YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
 
 POS_MGR = PosMgr()
 
@@ -238,7 +238,7 @@ async def handle_trade_fills():
 
     start_date = end_date = datetime.today.date()
 
-    while counter < FETCH_WINDOW
+    while counter < FETCH_WINDOW:
 
         #filled_orders = download_executions(start_date, end_date, accounts=IB_ACCOUNT_NAME)
         filled_orders = test_harness.download_executions(start_date, end_date, accounts=IB_ACCOUNT_NAME)
