@@ -252,13 +252,12 @@ async def handle_trade_fills():
     counter = 0 
     FETCH_WINDOW = 1800   ## 30min
 
-    start_date = end_date = datetime.today().date()
 
     logger.info('Fill capture coroutine started.')
     while counter < FETCH_WINDOW:
 
-        #filled_orders = download_executions(start_date, end_date, accounts=[IB_ACCOUNT_NAME])
-        filled_orders = test_harness.download_executions(start_date, end_date, accounts=[IB_ACCOUNT_NAME])
+        #filled_orders = download_executions(orderid= orderid)
+        filled_orders = test_harness.download_executions(orderid= orderid)
 
         for order in filled_orders:
             logger.info(f'Processing order_id: {order["OrderRef"]}')
@@ -311,7 +310,8 @@ async def main(strategy_id, universe):
 
             logger.info(f'opening price: {open_price}')
             asyncio.create_task( handle_trade_fills() )
-            entry_tkt = create_order(TradeSide.BUY, symbol, trade_amt, strategy_id)
+            entry_id = create_order(TradeSide.BUY, symbol, trade_amt, strategy_id)
+            POS_MGR.register_order(entry_id)
         else:
             logger.warning('entry triggered but trade_amt == 0!')
     else:
@@ -326,7 +326,8 @@ async def main(strategy_id, universe):
     fire_exit, current_pos = check_exit(position_node, stdv)
     if fire_exit: 
         asyncio.create_task( handle_trade_fills() )
-        exit_tkt = create_order(TradeSide.SELL, symbol, current_pos, strategy_id)
+        exit_id = create_order(TradeSide.SELL, symbol, current_pos, strategy_id)
+        POS_MGR.register_order(exit_id)
 
     eod_time, secs_until_eod = time_until(EOD_TIME)
     logger.info(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')

@@ -142,6 +142,7 @@ class PosMgr(object):
     def __init__(self):
         self.strategy_id = None
         self.universe = None 
+        self.order_ledger = dict()
 
         ## current names to trade w/ current positions
         self.positions = []
@@ -417,6 +418,11 @@ class PosMgr(object):
 
         self.allocations = alloc_nodes
 
+    ## hold a dictionary of open orders
+    def register_order(self, order_id, info=None):
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        order_info = dict(details=info, timestamp=ts)
+        self.order_ledger[order_id] = order_info
 
     def create_directory(self, directory_path):
         if not os.path.exists(directory_path):
