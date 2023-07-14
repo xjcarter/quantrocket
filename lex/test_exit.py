@@ -47,11 +47,9 @@ def check_exit(position_node, stdv):
     return get_out, current_pos
 
 pmgr = PosMgr()
-pmgr.strategy_id = 'Strategy1'
-pmgr.universe = ['SPY']
-pmgr.load_all()
-pos_node = pmgr.get_position('SPY')
+pmgr.initialize('Strategy1', ['SPY'])
 
+pos_node = pmgr.get_position('SPY')
 test_harness.ref_price = pos_node.price
 check_exit(pos_node, stdv=10)
 

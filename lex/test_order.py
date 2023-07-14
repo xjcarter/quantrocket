@@ -17,10 +17,9 @@ logger.addHandler(console_handler)
 from posmgr import PosMgr, TradeSide, Trade
 
 POS_MGR = PosMgr()
-POS_MGR.stratgey_id = 'Strategy1'
-POS_MGR.universe = ['SPY']
 
 IB_ACCOUNT_NAME = 'YOUR_ACCOUNT_NAME'
+
 
 def create_order(side, amount, symbol, strategy_id):
 
@@ -39,9 +38,9 @@ def create_order(side, amount, symbol, strategy_id):
     tag_new_order_id = _new_order_id('tiger')
 
     order = {
-        "account": "YOUR_ACCOUNT",
-        "symbol": "SPY",
-        "quantity": 100,
+        "account": strategy_id,
+        "symbol": symbol,
+        "quantity": amount, 
         "action": TradeSide.BUY.value,
         "order_type": "MKT"
     }
@@ -130,8 +129,9 @@ def handle_trade_fills():
         # await asyncio.sleep(1)
 
 
+POS_MGR.initialize('Strategy1', ['SPY'])
 
 test_harness.ref_price = 446.04 
-order_id = create_order(TradeSide.BUY, 77, 'SPY', 'Strategy1')
+order_id = create_order(TradeSide.BUY, 227, 'SPY', 'Strategy1')
 print(order_id)
 handle_trade_fills()

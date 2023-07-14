@@ -32,7 +32,7 @@ YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/wor
 
 POS_MGR = PosMgr()
 
-START_TIME = "09:28"
+START_TIME = "09:20"
 OPEN_TIME = "09:30"
 EXIT_TIME = "15:55"
 EOD_TIME = "16:30"
@@ -197,9 +197,9 @@ def calc_trade_amount(symbol, trade_capital):
     return int( (trade_capital/(ask+spread)) )
 
 
-async def handle_trade_fills():
+async def handle_trade_fills(tag):
 
-    logger.info('handle_fills_start') 
+    logger.info(f'handle_fills_start: {tag}') 
 
     counter = 0 
     FETCH_WINDOW = 60  ## 30min
@@ -212,7 +212,7 @@ async def handle_trade_fills():
         # Sleep for 20 seconds before checking for new filled orders
         await asyncio.sleep(20)
 
-    logger.info('handle_fill_end') 
+    logger.info(f'handle_fills_end {tag}') 
 
 
 async def main(strategy_id, universe):
@@ -227,16 +227,13 @@ async def main(strategy_id, universe):
     logger.info(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
     await asyncio.sleep(secs_until_open)
     logger.info(f'*** SENDING TRADE ON OPEN ***')
+    asyncio.create_task( handle_trade_fills('OPEN') )
 
     exit_time, secs_until_exit = time_until(EXIT_TIME)
     logger.info(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} EXIT.')
     await asyncio.sleep(secs_until_exit)
-    logger.info(f'*** ENTERED EXIT WINDOW ``***')
-    logger.info(f'*** CHECKING CLOSE ***')
-
-    fire_exit = True
-    if fire_exit: 
-        asyncio.create_task( handle_trade_fills() )
+    logger.info(f'*** EXIT -> CHECKING CLOSE ***')
+    asyncio.create_task( handle_trade_fills('CLOSE') )
 
     eod_time, secs_until_eod = time_until(EOD_TIME)
     logger.info(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')

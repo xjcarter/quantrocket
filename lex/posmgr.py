@@ -312,7 +312,9 @@ class PosMgr(object):
                 account_id, cash, timestamp = row
                 logger.info(f"{strategy_id}: accountId: {account_id}, cash: {cash}, timestamp: {timestamp}")
         else:
-            logger.info(f"No accounts found for strategyId '{strategy_id}'.")
+            err = f"No accounts found for strategyId '{strategy_id}'."
+            logger.info(err)
+            raise RuntimeError(err)
 
         # Close the cursor and connection
         cursor.close()
@@ -329,12 +331,19 @@ class PosMgr(object):
             alloc_nodes.append(alloc_node)
 
         logger.info(f"{strategy_id}: trade_capital: {total_cash}")
+        if total_cash <= 0:
+            err = f"total_cash = {total_cash} for {strategy_id}"
+            logger.critical(err)
+            raise RuntimeError(err)
+
         return alloc_nodes, total_cash
 
 
     ## master method used to load universe and positions for trading.
-    def load_all(self):
+    def initialize(self, strategy_id, universe_list):
 
+        self.strategy_id = strategy_id
+        self.universe = set(universe_list)
         ## give back a map of pos nodes, indexed by names,  
         ## and the allocation breakdown for accounts
         ## and the sum of all allocations
@@ -534,8 +543,6 @@ class PosMgr(object):
         processed_trade_ids = [ x['trade_id'] for x in self.trades ]
         new_trade = trade_obj.trade_id not in processed_trade_ids 
 
-        import pdb; pdb.set_trace()
-
         if new_trade:
             self.trades.append(trade_obj)
             logger.info(f'captured trade: {trade_dump}')
@@ -559,12 +566,7 @@ class PosMgr(object):
 if __name__ == "__main__":
     
     pmgr = PosMgr()
-    pmgr.strategy_id = 'Strategy1'
-    pmgr.universe = ['AAPL','SPY','QQQ']
-
-    ## set date to look for previous positions
-    ## by default this will be set to previous trade date base on us_trading calendar
-    pmgr.load_all()
+    pmgr.initalize('Strategy1', ['AAPL','SPY','QQQ'])
 
     logger.info(pmgr.positions)
 

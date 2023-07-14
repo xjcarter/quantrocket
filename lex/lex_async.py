@@ -224,23 +224,37 @@ async def handle_trade_fills():
 
     """
 
+    def _get_side(order):
+        sides = { 'BUY': TradeSide.BUY, 'SELL': TradeSide.SELL }
+        v = order.get('side', order.get('action'))
+        if v is not None:
+            return sides[v]
+        else:
+            raise RuntimeError(f'no BUY/SELL action indicated in order!\n order: {order}')
+
     ## map quantrocket order fill
     def _convert_quantrocket_order(order):
         trd = Trade( order['OrderRef'] )
-        trd.asset = order["Symbol"]
-        trd.exchange = order["Exchange"]
-        trd.side = TradeSide.SELL if order["Side"] == 'SELL' else TradeSide.BUY
-        trd.units = abs(order["Quantity"])
-        trd.price = order["Price"]
-        #trd.commission = order["commission"]
-        trd.timestamp = order["ExecutionTime"]
+        trd.asset = order["symbol"]
+        trd.side = _get_side(order)
+        trd.units = abs(order["quantity"])
+        trd.price = order["price"]
+
+        ## conditionals
+        trd.timestamp = order.get("timestamp")
+        if trd.timestamp is None: trd.stamp_timestamp()
+        trd.commission = order.get("commission")
+        trd.exchange = order.get("exchange")
+
         return trd
+
 
     counter = 0 
     FETCH_WINDOW = 1800   ## 30min
 
     start_date = end_date = datetime.today().date()
 
+    logger.info('Fill capture coroutine started.')
     while counter < FETCH_WINDOW:
 
         #filled_orders = download_executions(start_date, end_date, accounts=[IB_ACCOUNT_NAME])
@@ -254,14 +268,14 @@ async def handle_trade_fills():
         # Sleep for 1 second before checking for new filled orders
         await asyncio.sleep(1)
 
+    logger.info('Fill capture coroutine completed.')
+
 
 async def main(strategy_id, universe):
 
     global POS_MGR
 
-    POS_MGR.strategy_id = strategy_id
-    POS_MGR.universe = set(universe)
-    POS_MGR.load_all()
+    POS_MGR.initialize(strategy_id, set(universe))
 
     pp = POS_MGR.position_count()
     if pp == 0:

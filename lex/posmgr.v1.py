@@ -332,7 +332,7 @@ class PosMgr(object):
 
 
     ## master method used to load universe and positions for trading.
-    def load_all(self):
+    def initialize(self):
 
         ## give back a map of pos nodes, indexed by names,  
         ## and the allocation breakdown for accounts
@@ -555,12 +555,8 @@ class PosMgr(object):
 if __name__ == "__main__":
     
     pmgr = PosMgr()
-    pmgr.strategy_id = 'Strategy1'
-    pmgr.universe = ['AAPL','SPY','QQQ']
+    pmgr.initialize('Strategy1', ['AAPL','SPY','QQQ'])
 
-    ## set date to look for previous positions
-    ## by default this will be set to previous trade date base on us_trading calendar
-    pmgr.load_all()
 
     print(pmgr.positions)
 
