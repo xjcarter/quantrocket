@@ -32,8 +32,8 @@ YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/wor
 
 POS_MGR = PosMgr()
 
-START_TIME = "09:20"
-OPEN_TIME = "09:30"
+START_TIME = "09:32"
+OPEN_TIME = "09:35"
 EXIT_TIME = "15:55"
 EOD_TIME = "16:30"
 
@@ -202,15 +202,16 @@ async def handle_trade_fills(tag):
     logger.info(f'handle_fills_start: {tag}') 
 
     counter = 0 
-    FETCH_WINDOW = 60  ## 30min
+    FETCH_WINDOW = 1200 ## 20min
 
     while counter < FETCH_WINDOW:
         
-        logger.info(f'Processing potential orders')
+        if counter % 60 == 0:
+            logger.info(f'Processing potential orders. Counter= {counter}')
 
         counter += 1
         # Sleep for 20 seconds before checking for new filled orders
-        await asyncio.sleep(20)
+        await asyncio.sleep(1)
 
     logger.info(f'handle_fills_end {tag}') 
 
@@ -231,6 +232,7 @@ async def main(strategy_id, universe):
 
     exit_time, secs_until_exit = time_until(EXIT_TIME)
     logger.info(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} EXIT.')
+    logger.info(f'secs_until_exit = {secs_until_exit}')
     await asyncio.sleep(secs_until_exit)
     logger.info(f'*** EXIT -> CHECKING CLOSE ***')
     asyncio.create_task( handle_trade_fills('CLOSE') )
