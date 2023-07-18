@@ -4,7 +4,7 @@ from datetime import datetime
 #from quantrocket.blotter import place_order, download_executions
 import test_harness
 import asyncio
-from posmgr import PosMgr, TradeSide, Trade
+from posmgr import PosMgr, TradeSide, Trade, OrderType, OrderTicket
 import calendar_calcs
 from indicators import MondayAnchor, StDev
 import os
@@ -153,7 +153,9 @@ def check_exit(position_node, stdv):
     return get_out, current_pos
     
 
-def create_order(side, amount, symbol, strategy_id):
+## creates and submits order
+## order_notes is a field to hold any info that many help in auditting trades
+def create_order(side, amount, symbol, order_type=OrderType.MKT, order_notes=None):
 
     def _new_order_id(tag=None):
         # Generate a unique order ID with timestamp
@@ -167,11 +169,11 @@ def create_order(side, amount, symbol, strategy_id):
     # Create a market order to buy 100 shares of SPY
 
     order = {
-        "account": "YOUR_ACCOUNT",
-        "symbol": "SPY",
-        "quantity": 100,
-        "action": TradeSide.BUY.value,
-        "order_type": "MKT"
+        "account": IB_ACCOUNT_NAME,
+        "symbol": symbol,
+        "quantity": amount,
+        "action": side.value,
+        "order_type": order_type.value
     }
 
     logger.info('sending order.')
@@ -186,10 +188,18 @@ def create_order(side, amount, symbol, strategy_id):
     #order_id = place_order(**order)
     order_id = test_harness.place_order(**order)
     logger.info(f'order_id: {order_id} submitted.')
-    logger.info(json.dumps(order, ensure_ascii=False, indent =4 ))
 
-    return order_id 
+    order_info = {
+        'order_id': order_id,
+        'symbol': order['symbol']
+        'quantity': order['quantity']
+        'side': order['action']
+        'order_type': order['order_type']
+        'info': order_notes
+    }
+    logger.info(json.dumps(order_info, ensure_ascii=False, indent =4 ))
 
+    return order_info
 
 
 def calc_trade_amount(symbol, trade_capital):
@@ -250,7 +260,7 @@ async def handle_trade_fills():
 
 
     counter = 0 
-    FETCH_WINDOW = 1800   ## 30min
+    FETCH_WINDOW = 1200   ## 20min
 
 
     logger.info('Fill capture coroutine started.')
@@ -274,7 +284,10 @@ async def main(strategy_id, universe):
 
     global POS_MGR
 
+    logger.info(f'*** START ***')
+
     POS_MGR.initialize(strategy_id, set(universe))
+    logger.info(f'pos mgr initialized.')
 
     pp = POS_MGR.position_count()
     if pp == 0:
@@ -288,15 +301,15 @@ async def main(strategy_id, universe):
     ## returns a PosNode object
     position_node = POS_MGR.get_position(symbol)
     current_pos = position_node.position
+    logger.info(f'{symbol} current position = {current_pos}'
 
     data = load_historical_data(symbol)
     fire_entry, stdv = calc_metrics(data)
-    
-    start_time, secs_until_start = time_until(START_TIME)
-    logger.info(f'sleeping until {start_time.strftime("%Y%m%d-%H:%M:%S")} START.')
-    await asyncio.sleep(secs_until_start)
-    logger.info(f'*** START ***')
 
+    logger.info(f'trading metrics calculated.')
+
+    open_task = close_task = None
+    
     if current_pos == 0:
         trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
         if fire_entry and trade_amt > 0:
@@ -309,9 +322,9 @@ async def main(strategy_id, universe):
             open_price = get_current_price(position_node.name)
 
             logger.info(f'opening price: {open_price}')
-            asyncio.create_task( handle_trade_fills() )
-            entry_id = create_order(TradeSide.BUY, symbol, trade_amt, strategy_id)
-            POS_MGR.register_order(entry_id)
+            open_task = asyncio.create_task( handle_trade_fills() )
+            order_info = create_order(TradeSide.BUY, symbol, trade_amt, order_notes=strategy_id)
+            POS_MGR.register_order(order_info)
         else:
             logger.warning('entry triggered but trade_amt == 0!')
     else:
@@ -325,14 +338,16 @@ async def main(strategy_id, universe):
     position_node = POS_MGR.get_position(symbol)
     fire_exit, current_pos = check_exit(position_node, stdv)
     if fire_exit: 
-        asyncio.create_task( handle_trade_fills() )
-        exit_id = create_order(TradeSide.SELL, symbol, current_pos, strategy_id)
-        POS_MGR.register_order(exit_id)
+        close_task = asyncio.create_task( handle_trade_fills() )
+        order_info = create_order(TradeSide.SELL, symbol, current_pos, order_notes=strategy_id)
+        POS_MGR.register_order(order_info)
 
     eod_time, secs_until_eod = time_until(EOD_TIME)
     logger.info(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')
     await asyncio.sleep(secs_until_eod)
     logger.info(f'*** END OF DAY ***')
+
+    await asyncio.gather(open_task, close_task)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
 #from quantrocket.realtime import get_prices 
 #from quantrocket.blotter import place_order, download_executions
-import asyncio
-from posmgr import PosMgr, TradeSide, Trade
+import os, time
+import threading
+
+from posmgr import PosMgr, Trade, TradeSide
 import calendar_calcs
-from indicators import MondayAnchor, StDev
-import os
-import uuid
 
 import logging
 # Create a logger specific to __main__ module
@@ -31,10 +30,9 @@ YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/wor
 
 POS_MGR = PosMgr()
 
-START_TIME = "10:40"
-OPEN_TIME = "11:00"
-EXIT_TIME = "14:00"
-EOD_TIME = "14:30"
+OPEN_TIME = "09:30"
+EXIT_TIME = "15:55"
+EOD_TIME = "16:30"
 
 def time_until(benchmark, time_string):
     now = benchmark
@@ -51,13 +49,13 @@ def time_until(benchmark, time_string):
     return new_time, secs_until
 
 
-async def handle_trade_fills(tag):
+def handle_fills(tag):
 
     logger.info(f'handle_fills_start: {tag}')
 
     counter = 0
-    #end_time = datetime.now() + timedelta(minutes=20)
-    #while datetime.now() < end_time:
+#    end_time = datetime.now() + timedelta(minutes=20)
+#    while datetime.now() < end_time:
     while counter < 1200:
 
         if counter % 60 == 0:
@@ -65,63 +63,58 @@ async def handle_trade_fills(tag):
 
         counter += 1
 
-        await asyncio.sleep(1)
+        time.sleep(1)
 
     logger.info(f'handle_fills_end {tag}')
 
 
-async def main(strategy_id, universe):
+def main(strategy_id, universe):
 
     logger.info('start main')
     now = datetime.now()
 
-    start_time, secs_until_start = time_until(now, START_TIME)
-    open_time, secs_until_open = time_until(start_time, OPEN_TIME)
+    open_time, secs_until_open = time_until(now, OPEN_TIME)
     exit_time, secs_until_exit = time_until(open_time, EXIT_TIME)
     eod_time, secs_until_eod = time_until(exit_time, EOD_TIME)
 
-    logger.info(f'sleeping until {start_time.strftime("%Y%m%d-%H:%M:%S")} START.')
-    logger.info(f'secs_until_start= {secs_until_start}')
-    await asyncio.sleep(secs_until_start)
     logger.info(f'*** START ***')
 
     logger.info(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
     logger.info(f'secs_until_open= {secs_until_open}')
-    await asyncio.sleep(secs_until_open)
+    time.sleep(secs_until_open)
+
     logger.info(f'*** SENDING TRADE ON OPEN ***')
-    open_task = asyncio.create_task( handle_trade_fills('OPEN') )
+    thread1 = threading.Thread(target=handle_fills, args=('OPEN',))
+    thread1.start()
 
     logger.info(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} EXIT.')
     logger.info(f'secs_until_exit= {secs_until_exit}')
-    await asyncio.sleep(secs_until_exit)
+    time.sleep(secs_until_exit)
+
     logger.info(f'*** EXIT -> CHECKING CLOSE ***')
-    close_task = asyncio.create_task( handle_trade_fills('CLOSE') )
+    thread2 = threading.Thread(target=handle_fills, args=('CLOSE',))
+    thread2.start()
 
     logger.info(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')
     logger.info(f'secs_until_eod= {secs_until_eod}')
-    await asyncio.sleep(secs_until_eod)
+    time.sleep(secs_until_eod)
+
+    thread1.join()
+    thread2.join()
     logger.info(f'*** END OF DAY ***')
 
-    await open_task
-    await close_task
-    logger.info(f'jobs completed.')
-
-
-    #await asyncio.gather(open_task, close_task)
 
 def show_splits():
     now = datetime.now()
-    start_time, secs_until_start = time_until(now, START_TIME)
-    open_time, secs_until_open = time_until(start_time, OPEN_TIME)
+    open_time, secs_until_open = time_until(now, OPEN_TIME)
     exit_time, secs_until_exit = time_until(open_time, EXIT_TIME)
     eod_time, secs_until_eod = time_until(exit_time, EOD_TIME)
 
-    logger.info(f'{start_time} secs_until= {secs_until_start}')
     logger.info(f'{open_time} secs_until= {secs_until_open}')
     logger.info(f'{exit_time} secs_until= {secs_until_exit}')
     logger.info(f'{eod_time} secs_until= {secs_until_eod}')
 
 if __name__ == "__main__":
     #show_splits()
-    asyncio.run( main('12345', ['SPY']) )
+    main('12345', ['SPY'])
 

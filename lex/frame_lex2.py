@@ -2,11 +2,10 @@ from datetime import datetime, timedelta
 #from quantrocket.realtime import get_prices 
 #from quantrocket.blotter import place_order, download_executions
 import asyncio
-from posmgr import PosMgr, TradeSide, Trade
-import calendar_calcs
-from indicators import MondayAnchor, StDev
 import os
-import uuid
+
+from posmgr import PosMgr, Trade, TradeSide
+import calendar_calcs
 
 import logging
 # Create a logger specific to __main__ module
@@ -31,10 +30,10 @@ YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/wor
 
 POS_MGR = PosMgr()
 
-START_TIME = "10:40"
-OPEN_TIME = "11:00"
-EXIT_TIME = "14:00"
-EOD_TIME = "14:30"
+START_TIME = "14:30"
+OPEN_TIME = "14:45"
+EXIT_TIME = "16:00"
+EOD_TIME = "16:30"
 
 def time_until(benchmark, time_string):
     now = benchmark
@@ -56,9 +55,9 @@ async def handle_trade_fills(tag):
     logger.info(f'handle_fills_start: {tag}')
 
     counter = 0
-    #end_time = datetime.now() + timedelta(minutes=20)
-    #while datetime.now() < end_time:
-    while counter < 1200:
+    end_time = datetime.now() + timedelta(minutes=20)
+    while datetime.now() < end_time:
+#    while counter < 1200:
 
         if counter % 60 == 0:
             logger.info(f'Processing potential order. counter= {counter}')
@@ -76,7 +75,7 @@ async def main(strategy_id, universe):
     now = datetime.now()
 
     start_time, secs_until_start = time_until(now, START_TIME)
-    open_time, secs_until_open = time_until(start_time, OPEN_TIME)
+    open_time, secs_until_open = time_until(now, OPEN_TIME)
     exit_time, secs_until_exit = time_until(open_time, EXIT_TIME)
     eod_time, secs_until_eod = time_until(exit_time, EOD_TIME)
 
@@ -112,7 +111,7 @@ async def main(strategy_id, universe):
 def show_splits():
     now = datetime.now()
     start_time, secs_until_start = time_until(now, START_TIME)
-    open_time, secs_until_open = time_until(start_time, OPEN_TIME)
+    open_time, secs_until_open = time_until(now, OPEN_TIME)
     exit_time, secs_until_exit = time_until(open_time, EXIT_TIME)
     eod_time, secs_until_eod = time_until(exit_time, EOD_TIME)
 

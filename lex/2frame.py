@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-import asyncio
+import trio 
 
 import logging
 # Create a logger specific to __main__ module
@@ -13,10 +13,10 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 
-START_TIME = "08:57"
-OPEN_TIME = "09:05"
-EXIT_TIME = "10:20"
-EOD_TIME = "10:45"
+START_TIME = "14:55"
+OPEN_TIME = "15:00"
+EXIT_TIME = "15:50"
+EOD_TIME = "16:20"
 
 
 ## create date time object a from time string (HH:MM)
@@ -46,19 +46,17 @@ async def handle_trade_fills(tag):
 
     logger.info(f'handle_fills_start: {tag}') 
 
-    FETCH_WINDOW = 1200 # 20min 
-
-    #end_time = datetime.now() + timedelta(minutes=FETCH_WINDOW)
-    #while datetime.now() < end_time:
     counter = 0
-    while counter < FETCH_WINDOW:
+    fetch_window = 1200
+    end_time = datetime.now() + timedelta(minutes=20)
+    while datetime.now() < end_time:
        
         if counter % 60 == 0:
             logger.info(f'Processing potential order. counter= {counter}')
 
         counter += 1
 
-        await asyncio.sleep(1)
+        await trio.sleep(1)
 
     logger.info(f'handle_fills_end {tag}') 
 
@@ -68,28 +66,29 @@ async def main(strategy_id, universe):
     logger.info('start main')
     start_time, secs_until_start = time_until(START_TIME)
     logger.info(f'sleeping until {start_time.strftime("%Y%m%d-%H:%M:%S")} START.')
-    await asyncio.sleep(secs_until_start)
+    await trio.sleep(secs_until_start)
     logger.info(f'*** START ***')
 
-    open_time, secs_until_open = time_until(OPEN_TIME)
-    logger.info(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
-    await asyncio.sleep(secs_until_open)
-    logger.info(f'*** SENDING TRADE ON OPEN ***')
-    asyncio.create_task( handle_trade_fills('OPEN') )
+    async with trio.open_nursery() as nursery:
+        open_time, secs_until_open = time_until(OPEN_TIME)
+        logger.info(f'sleeping until {open_time.strftime("%Y%m%d-%H:%M:%S")} OPEN.')
+        await trio.sleep(secs_until_open)
+        logger.info(f'*** SENDING TRADE ON OPEN ***')
+        nursery.start_soon(handle_trade_fills, 'OPEN')
 
-    exit_time, secs_until_exit = time_until(EXIT_TIME)
-    logger.info(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} EXIT.')
-    logger.info(f'secs_until_exit = {secs_until_exit}')
-    await asyncio.sleep(secs_until_exit)
-    logger.info(f'*** EXIT -> CHECKING CLOSE ***')
-    asyncio.create_task( handle_trade_fills('CLOSE') )
+        exit_time, secs_until_exit = time_until(EXIT_TIME)
+        logger.info(f'sleeping until {exit_time.strftime("%Y%m%d-%H:%M:%S")} EXIT.')
+        await trio.sleep(secs_until_exit)
+        logger.info(f'*** EXIT -> CHECKING CLOSE ***')
+        nursery.start_soon(handle_trade_fills, 'CLOSE')
 
     eod_time, secs_until_eod = time_until(EOD_TIME)
     logger.info(f'sleeping until {eod_time.strftime("%Y%m%d-%H:%M:%S")} END OF DAY.')
-    await asyncio.sleep(secs_until_eod)
+    await trio.sleep(secs_until_eod)
     logger.info(f'*** END OF DAY ***')
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main('12345', ['SPY']))
+    trio.run(main, '12345', ['SPY'])
+
+

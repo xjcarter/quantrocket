@@ -1,5 +1,6 @@
 
 import json 
+import fcntl
 from datetime import datetime
 import re
 import os
@@ -55,6 +56,38 @@ class PosNode(object):
     def copy(self):
         new_node = PosNode(self.name)
         new_node.__dict__.update(self.__dict__)
+        return new_node
+
+    def stamp_with_time(self):
+        now = datetime.now()
+        self.timestamp = now.strftime("%Y%m%d-%H:%M:%S")
+
+class Order(object):
+    def __init__(self):
+        self.order_id = None
+        self.symbol = None 
+        self.qty = 0
+        self.open_qty = 0
+        self.side = 0
+        self.order_type = 0
+        self.order_target = 0
+        self.timestamp = None
+        self.info = None 
+
+    def to_dict(self):
+        m = dict()
+        for k, v in self.__dict__.items():
+            m.update({k:v})
+        return m
+
+    def from_dict(self, json_dict):
+        for k, v in json_dict.items():
+            self.__dict__.update({k:v})
+        return self
+
+    def copy(self):
+        new_order = Order()
+        new_order.__dict__.update(self.__dict__)
         return new_node
 
     def stamp_with_time(self):
@@ -258,6 +291,7 @@ class PosMgr(object):
 
         directory = f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/trades/' 
         trade_file = f'{self.strategy_id}.trades.{today}.json' 
+        orders_file = f'{self.strategy_id}.orders.{today}.json' 
 
         trade_detail = [] 
         file_path = os.path.join(directory, trade_file)
@@ -265,6 +299,16 @@ class PosMgr(object):
             with open(file_path, 'r') as file:
                 trade_json = json.load(file)
                 trade_detail = trade_json.get('trades', [])
+
+        ## recover the orders from today's order file
+        self.order_ledger.clear()
+        file_path = os.path.join(directory, orders_file)
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as file:
+                orders_json = json.load(file)
+                for order_dict in orders_json:
+                    recovered_order = Order()
+                    self.order_ledger[ order_dict['order_id'] ] = recovered_order.from_dict(order_dict) 
 
         return pos_detail, trade_detail
 
@@ -418,15 +462,33 @@ class PosMgr(object):
 
         self.allocations = alloc_nodes
 
-    ## hold a dictionary of open orders
-    def register_order(self, order_id, info=None):
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        order_info = dict(details=info, timestamp=ts)
-        self.order_ledger[order_id] = order_info
 
     def create_directory(self, directory_path):
         if not os.path.exists(directory_path):
             os.makedirs(directory_path)
+
+    def write_orders(self, now):
+        def _to_dict(lst):
+            f = lambda x: x if isinstance(x,dict) else x.to_dict()
+            return [ f(x) for x in lst ]
+
+        ## sorts orders by timestamp
+        
+        sorted_orders = sorted( _to_dict(self.order_ledger.values()), key=lambda x: x['timestamp'])
+
+        tdy = now.strftime("%Y%m%d")
+        newdir =f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/trades/'
+        self.create_directory(newdir)
+        orders_file = f'{newdir}/{self.strategy_id}.orders.{tdy}.json'
+
+        ## lock file to prevent race conditions between order send and order fill
+        with open(orders_file, 'w') as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            f.write(s + '\n')
+            fcntl.flock(file, fcntl.LOCK_UN)
+
+        logger.info(f'{orders_file} updated')
+
 
     def write_positions(self, now):
         def _to_dict(lst):
@@ -471,6 +533,24 @@ class PosMgr(object):
             f.write(s + '\n')
 
         logger.info(f'{trade_file} updated')
+
+
+    ## hold a dictionary of open orders
+    def register_order(self, order_info):
+        order = Order()
+        order.order_id = order_info['order_id']
+        order.symbol = order_info.get('symbol')
+        order.qty = order_info.get('quantity')
+        order.open_qty = order.qty
+        order.side = order_info.get('side')
+        order.info = order_info.get('info')
+        order.order_type = order_info.get('order_type')
+        order.order_target = order_info.get('order_target')
+        order.stamp_with_time()
+
+        self.order_ledger[ order_info.order_id ] = order 
+        self.write_orders( datetime.now() )
+
 
     def update_positions(self, pos_node, trade_obj):
 
@@ -552,6 +632,23 @@ class PosMgr(object):
         if new_trade:
             self.trades.append(trade_obj)
             logger.info(f'captured trade: {trade_dump}')
+
+            ## executed trades contain the original order_id submitted
+            ## and a trade_id to identify the executed trade
+            ## split fill happen when 2 or more trades with unique trade_ids
+            ## belong to the same parent order_id
+            order_id = trade_obj.order_id
+            working_order = self.order_ledger.get(order_id)
+            if working_order is not None:
+                open_qty = working_order.open_qty
+                fill_amt = trade_obj.units
+                if fill_amt > open_qty:
+                    logger.error(f'order_id:{order_id}, fill_amt:{fill_amt} > open_qty:{open_qty}.')
+                if open_qty > 0:
+                    working_order.open_qty -= fill_amt
+                self.write_orders( datetime.now() )
+            else:
+                logger.error('cannot not find order_id:{order_id} in order_ledger.')
 
             ## NOTE: trade_obj.units is ALWAYS > 0
 
