@@ -2,14 +2,14 @@ from datetime import datetime, timedelta
 #from quantrocket.realtime import get_prices 
 #from quantrocket.blotter import place_order, download_executions
 from clockutils import TripWire, time_from_str 
-import calendar_calcs
-import time 
 
 import logging
+import sys, time
+
 # Create a logger.info specific to __main__ module
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-console_handler = logging.StreamHandler()
+console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s',
                     datefmt='%a %Y-%m-%d %H:%M:%S')
@@ -46,18 +46,35 @@ def main(strategy_id, universe):
 
     initialize()
 
-    at_start = TripWire(time_from_str("19:31"))
-    at_end = TripWire(time_from_str("19:35"))
+    ##at_open = TripWire(time_from_str("09:31"))
+    ##every_30_mins = TripWire(time_from_str("9:31"), interval_reset=(60*30))
+    ##at_close = TripWire(time_from_str("15:55"))
+    ##at_end = TripWire(time_from_str("16:10"))
+
+    at_open = TripWire(time_from_str("18:00"))
+    every_10_mins = TripWire(time_from_str("18:00"), interval_reset=(60*10))
+    at_close = TripWire(time_from_str("19:00"))
+    at_end = TripWire(time_from_str("19:10"))
     while True:
-        with at_start as start:
-            if start:
-                check_exit()
+        with at_open as opening:
+            if opening:
+                check_entry()
                 price_bar = snap_prices()
                 send_order()
 
-        with at_end as end:
-            if end:
-                logger.info("laters!!!")
+        with at_close as closing:
+            if closing:
+                check_exit()
+                price_bar = snap_prices()
+                send_order()
+        
+        with every_10_mins as check:
+            if check:
+                check_fills()
+
+        with at_end as end_of_day:
+            if end_of_day:
+                logger.info("end_of_day!!")
                 break
 
         time.sleep(1)

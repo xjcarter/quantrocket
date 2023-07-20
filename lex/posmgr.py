@@ -34,6 +34,13 @@ class TradeSide(str, Enum):
     BUY = 'BUY'
     SELL = 'SELL'
 
+class OrderType(str, Enum):
+    MKT = 'MKT'
+    LIMIT = 'LIMIT'
+    STOP = 'STOP'
+    STOP_LIMIT = 'STOP_LIMIT'
+
+
 class PosNode(object):
     def __init__(self, name):
         self.name = name
@@ -128,7 +135,11 @@ class AllocNode(object):
 
 class Trade(object):
     def __init__(self, trade_id=None ):
+        ## execution id for the trade
         self.trade_id = trade_id
+        ## originating order_id associated with this trade,
+        ## ie multiple trade_ids can belong to a single order_id (split fills)
+        self.order_id = None 
         self.strategy_id = None
         self.side = None
         self.asset = None
@@ -484,8 +495,9 @@ class PosMgr(object):
         ## lock file to prevent race conditions between order send and order fill
         with open(orders_file, 'w') as f:
             fcntl.flock(f, fcntl.LOCK_EX)
+            s = json.dumps(sorted_orders, ensure_ascii=False, indent =4 )
             f.write(s + '\n')
-            fcntl.flock(file, fcntl.LOCK_UN)
+            fcntl.flock(f, fcntl.LOCK_UN)
 
         logger.info(f'{orders_file} updated')
 
@@ -539,16 +551,18 @@ class PosMgr(object):
     def register_order(self, order_info):
         order = Order()
         order.order_id = order_info['order_id']
-        order.symbol = order_info.get('symbol')
-        order.qty = order_info.get('quantity')
+        order.symbol = order_info['symbol']
+        order.qty = order_info['quantity']
         order.open_qty = order.qty
-        order.side = order_info.get('side')
+        order.side = order_info['side']
+
+        #E optionals
         order.info = order_info.get('info')
         order.order_type = order_info.get('order_type')
         order.order_target = order_info.get('order_target')
         order.stamp_with_time()
 
-        self.order_ledger[ order_info.order_id ] = order 
+        self.order_ledger[ order.order_id ] = order 
         self.write_orders( datetime.now() )
 
 

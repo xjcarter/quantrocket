@@ -18,14 +18,14 @@ logger.addHandler(console_handler)
 from posmgr import PosMgr, TradeSide, Trade
 
 
-MAX_HOLD_PERIOD = 9
+MAX_HOLD_PERIOD = 3 
 
 
 def check_exit(position_node, stdv):
 
     current_pos, entry_price = position_node.position, position_node.price
     duration = position_node.duration
-    test_harness.price_skew = 0.10
+    test_harness.price_skew = -0.50
     #current_price = get_current_price(position_node.name)
     current_price = test_harness.get_current_price(position_node.name)
 
@@ -51,7 +51,7 @@ pmgr.initialize('Strategy1', ['SPY'])
 
 pos_node = pmgr.get_position('SPY')
 test_harness.ref_price = pos_node.price
-check_exit(pos_node, stdv=10)
+check_exit(pos_node, stdv=0.5)
 
 
 

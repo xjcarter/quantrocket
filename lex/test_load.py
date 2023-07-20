@@ -70,6 +70,7 @@ def calc_metrics(stock_df):
         ## show last indcator date, anchor bar and close
         logger.info(f'>>> {ldate}: A:{anchor_bar}, C:{last_close}')
         if bkout < 0 and end_of_week == False:
+            logger.info(f'buy triggered!')
             valid_entry = True
 
     return valid_entry, stdev.valueAt(0)

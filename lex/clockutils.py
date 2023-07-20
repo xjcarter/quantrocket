@@ -49,14 +49,18 @@ from datetime import datetime, timedelta
 import time
 
 class TripWire:
-    def __init__(self, trigger_dt):
+    def __init__(self, trigger_dt, interval_reset=None):
         self.trigger_dt = trigger_dt
         self.triggered = False
+        self.interval_reset = interval_reset
 
     def __enter__(self):
         current_dt = datetime.now()
         if not self.triggered and current_dt >= self.trigger_dt:
             self.triggered = True
+            if self.interval_reset:
+                self.trigger_dt += timedelta(seconds=self.interval_reset)
+                self.triggered = False
             return self
         else:
             return None

@@ -191,10 +191,10 @@ def create_order(side, amount, symbol, order_type=OrderType.MKT, order_notes=Non
 
     order_info = {
         'order_id': order_id,
-        'symbol': order['symbol']
-        'quantity': order['quantity']
-        'side': order['action']
-        'order_type': order['order_type']
+        'symbol': order['symbol'],
+        'quantity': order['quantity'],
+        'side': order['action'],
+        'order_type': order['order_type'],
         'info': order_notes
     }
     logger.info(json.dumps(order_info, ensure_ascii=False, indent =4 ))
@@ -232,29 +232,30 @@ async def handle_trade_fills():
     Account: The account associated with the execution.
     Strategy: The strategy or algorithm associated with the execution.
 
+    FIX THIS: you have to adjust _convert_quantrocket_fill 
     """
 
-    def _get_side(order):
+    def _get_side(fill):
         sides = { 'BUY': TradeSide.BUY, 'SELL': TradeSide.SELL }
-        v = order.get('side', order.get('action'))
+        v = order.get('side', fill.get('action'))
         if v is not None:
             return sides[v]
         else:
             raise RuntimeError(f'no BUY/SELL action indicated in order!\n order: {order}')
 
     ## map quantrocket order fill
-    def _convert_quantrocket_order(order):
-        trd = Trade( order['OrderRef'] )
-        trd.asset = order["symbol"]
-        trd.side = _get_side(order)
-        trd.units = abs(order["quantity"])
-        trd.price = order["price"]
+    def _convert_quantrocket_fill(fill):
+        trd = Trade( fill['order_id'] )
+        trd.asset = fill["symbol"]
+        trd.side = _get_side(fill)
+        trd.units = abs(fill["quantity"])
+        trd.price = fill["price"]
 
         ## conditionals
-        trd.timestamp = order.get("timestamp")
+        trd.timestamp = fill.get("timestamp")
         if trd.timestamp is None: trd.stamp_timestamp()
-        trd.commission = order.get("commission")
-        trd.exchange = order.get("exchange")
+        trd.commission = fill.get("commission")
+        trd.exchange = fill.get("exchange")
 
         return trd
 
@@ -269,9 +270,9 @@ async def handle_trade_fills():
         #filled_orders = download_executions(orderid= orderid)
         filled_orders = test_harness.download_executions(orderid= orderid)
 
-        for order in filled_orders:
-            logger.info(f'Processing order_id: {order["OrderRef"]}')
-            POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_order )
+        for fill in filled_orders:
+            logger.info(f'Processing trade_id: {fill["trade_id"]}')
+            POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_fill )
 
         counter += 1
         # Sleep for 1 second before checking for new filled orders
