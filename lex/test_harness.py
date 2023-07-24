@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 
 from posmgr import OrderType
+from price_generator import SimulatedPriceGenerator
 
 import logging
 # Create a logger specific to __main__ module
@@ -21,6 +22,7 @@ logger.addHandler(console_handler)
 order_queue = list()
 price_skew = 0
 ref_price = None
+PRICE_MGR = SimulatedPriceGenerator(100.0, 0.50, 0.20)
 
 YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
 
@@ -52,6 +54,13 @@ def alter_data_to_anchor(stock_df, adjust_close=0):
     return stock_df 
 
 
+def generate_ohlc(symbol):
+    global ref_price
+
+    ohlc = PRICE_MGR.generate_ohlc()
+    ref_price = ohlc.close
+    return ohlc 
+
 """
 prices = get_prices([symbol], ["Bid", "Ask"])
 bid_price = prices.loc[symbol, "Bid"]
@@ -63,6 +72,8 @@ def get_prices(symbol_list, fields):
     global price_skew
 
     symbol = symbol_list[0]
+    generate_ohlc(symbol)
+
     logger.info(f'fetching prices: {ref_price}, skew = {price_skew}')
     ref_price += price_skew
     logger.info(f'new ref_price = {ref_price}')
@@ -78,6 +89,7 @@ def get_current_price(symbol):
     bid_price = prices.loc[symbol, "Bid"]
     ask_price = prices.loc[symbol, "Ask"]
     return 0.5 * (bid_price + ask_price)
+
 
 
 #order_id = place_order(account, symbol, quantity, action, order_type)

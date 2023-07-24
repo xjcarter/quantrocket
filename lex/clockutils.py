@@ -49,13 +49,16 @@ from datetime import datetime, timedelta
 import time
 
 class TripWire:
-    def __init__(self, trigger_dt, interval_reset=None):
+    def __init__(self, trigger_dt, interval_reset=None, stop_at=None):
         self.trigger_dt = trigger_dt
+        self.stop_dt = stop_at
         self.triggered = False
         self.interval_reset = interval_reset
 
     def __enter__(self):
         current_dt = datetime.now()
+        if self.stop_dt is not None and current_dt > self.stop_dt:
+            return None
         if not self.triggered and current_dt >= self.trigger_dt:
             self.triggered = True
             if self.interval_reset:
@@ -79,8 +82,10 @@ if __name__ == "__main__":
     end_dt = datetime.now() + timedelta(seconds=7)
     tt = TripWire(trigger_dt)
 
-    print('running at:', datetime.now())
-    while datetime.now() < end_dt:
+    now = datetime.now()
+    print(f'start: {trigger_dt}, end: {end_dt}')
+    while now < end_dt:
+        print(f'countdown: {now}')
         with tt as t:
             if t: 
                 now = datetime.now()
@@ -88,7 +93,30 @@ if __name__ == "__main__":
                 print('TripWire activated')
 
         now = datetime.now()
-        print(now)
+        time.sleep(1)
+
+    print('\n\ntest range TripWire')
+    print('sleeping for 10 seconds.')
+    time.sleep(10)
+    trigger_dt = datetime.now() + timedelta(seconds=5)
+    stop_dt = datetime.now() + timedelta(seconds=60)
+    end_dt = datetime.now() + timedelta(seconds=100)
+    in_between = TripWire(trigger_dt, interval_reset=5, stop_at=stop_dt)
+    at_end = TripWire(end_dt)
+    print('reseting every 5 seconds.')
+    print(f'start: {trigger_dt}, stop: {stop_dt}')
+    while True:
+        with in_between as btwn:
+            if btwn:
+                now = datetime.now()
+                print(f'in_between at: {now}')
+        
+        with at_end as end:
+            if end:
+                now = datetime.now()
+                print(f'end_at: {now}')
+                break
+
         time.sleep(1)
 
 

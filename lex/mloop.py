@@ -51,10 +51,10 @@ def main(strategy_id, universe):
     ##at_close = TripWire(time_from_str("15:55"))
     ##at_end = TripWire(time_from_str("16:10"))
 
-    at_open = TripWire(time_from_str("18:00"))
-    every_10_mins = TripWire(time_from_str("18:00"), interval_reset=(60*10))
-    at_close = TripWire(time_from_str("19:00"))
-    at_end = TripWire(time_from_str("19:10"))
+    at_open = TripWire(time_from_str("09:30"))
+    every_10_mins = TripWire(time_from_str("09:30"), interval_reset=(60*10))
+    at_close = TripWire(time_from_str("15:55"))
+    at_end = TripWire(time_from_str("16:05"))
     while True:
         with at_open as opening:
             if opening:

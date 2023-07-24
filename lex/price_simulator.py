@@ -27,6 +27,11 @@ class SimulatedPriceGenerator:
         ohlc = OHLC(open=open_price, high=high_price, low=low_price, close=close_price)
         return ohlc
 
+    def get_current_price(self):
+        v = self.generate_ohlc()
+        return v.close
+
+
 # Example usage:
 starting_price = 100.0
 average_range = 0.5
