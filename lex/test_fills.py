@@ -74,7 +74,7 @@ def handle_trade_fills():
 
 
 POS_MGR.initialize('Strategy1', ['SPY'])
-test_harness.ref_price = 123.45
+test_harness.override_price = 123.45
 order_info = test_harness.create_order(TradeSide.BUY, 87, 'SPY')
 POS_MGR.register_order(order_info)
 handle_trade_fills()

@@ -49,8 +49,8 @@ pmgr = PosMgr()
 pmgr.initialize('Strategy1', ['SPY'])
 
 pos_node = pmgr.get_position('SPY')
-test_harness.ref_price = pos_node.price
-test_harness.price_skew = 1.50
+test_harness.override_price = pos_node.price
+test_harness.override_price_skew = 1.50
 check_exit(pos_node, stdv=0.5)
 
 

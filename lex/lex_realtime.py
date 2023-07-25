@@ -128,9 +128,8 @@ def check_exit(position_node, stdv):
 
     current_pos, entry_price = position_node.position, position_node.price
     duration = position_node.duration
-    TESTER.price_skew = 0.10
-    current_price = TESTER.get_current_price(position_node.name)
-    #current_price = get_current_price(position_node.name)
+
+    current_price = get_current_price(position_node.name)
 
     get_out = False
     alert = 'NO_EXIT'
@@ -229,7 +228,7 @@ def check_for_fills():
     Account: The account associated with the execution.
     Strategy: The strategy or algorithm associated with the execution.
 
-    FIX TESTERIS: you have to adjust _convert_quantrocket_fill 
+    FIX THIS: you have to adjust _convert_quantrocket_fill 
     """
 
     def _get_side(fill):
@@ -329,8 +328,7 @@ def main(strategy_id, universe):
                     trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
                     if fire_entry and trade_amt > 0:
 
-                        TESTER.price_skew = 0
-                        open_price = TESTER.get_current_price(position_node.name)
+                        open_price = get_current_price(position_node.name)
 
                         logger.info(f'opening price: {open_price}')
                         order_info = create_order(TradeSide.BUY, symbol, trade_amt, order_notes=strategy_id)

@@ -20,8 +20,8 @@ logger.addHandler(console_handler)
 
 
 order_queue = list()
-price_skew = 0
-ref_price = None
+override_price_skew = 0
+override_price = None
 PRICE_MGR = SimulatedPriceGenerator(100.0, 0.50, 0.20)
 
 YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
@@ -30,7 +30,7 @@ YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/wor
 ## force yesterday's close to be above/below the current anchor
 ## use adjust_close to tweak the close relative to the current anchor
 def alter_data_to_anchor(stock_df, adjust_close=0):
-    global ref_price 
+    global override_price 
 
     from indicators import MondayAnchor
     
@@ -46,41 +46,49 @@ def alter_data_to_anchor(stock_df, adjust_close=0):
         last_index = idate
 
     anchor_bar, _ = anchor.valueAt(0)
-    ref_price = anchor_bar['Low'] + adjust_close
-    stock_df.at[last_index,'Close'] = ref_price
+    override_price = anchor_bar['Low'] + adjust_close
+    stock_df.at[last_index,'Close'] = override_price
 
-    logger.info(f'anchor_bar = {anchor_bar}, ref_price = {ref_price}')
+    logger.info(f'anchor_bar = {anchor_bar}, override_price = {override_price}')
 
     return stock_df 
 
 
 def generate_ohlc(symbol=None):
-    global ref_price
     global PRICE_MGR
 
     ohlc = PRICE_MGR.generate_ohlc()
     logger.info(f'ohlc_bar: {ohlc}')
     return ohlc 
 
+def get_test_price():
+    global override_price
+    global override_price_skew
+    global PRICE_MGR 
+
+    if override_price:
+        return override_price + override_price_skew
+
+    if PRICE_MGR.has_ohlc:
+        return PRICE_MGR.current_ohlc.close
+    else:
+        ohlc = generate_ohlc()
+        return ohlc.close
+
 """
 prices = get_prices([symbol], ["Bid", "Ask"])
 bid_price = prices.loc[symbol, "Bid"]
 ask_price = prices.loc[symbol, "Ask"]
-price_skew = a testing parameter that allows me to control the next 'print' relative to the last get_prices request
+override_price_skew = a testing parameter that allows me to control the next 'print' relative to the last get_prices request
 """
 def get_prices(symbol_list, fields):
-    global ref_price 
-    global price_skew
 
     symbol = symbol_list[0]
-    if ref_price is None:
-        ohlc = generate_ohlc()
-        ref_price = ohlc.close
 
-    logger.info(f'fetching prices: {ref_price}, skew = {price_skew}')
-    ref_price += price_skew
-    logger.info(f'new ref_price = {ref_price}')
-    bid, ask = ref_price - 0.1, ref_price
+    logger.info(f'fetching prices: {override_price}, skew = {override_price_skew}')
+    test_price = get_test_price() 
+    logger.info(f'new override_price = {override_price}')
+    bid, ask = test_price - 0.1, test_price
     logger.info(f'bid: {bid}, ask: {ask}')
     df = pandas.DataFrame(columns=['symbol','Bid','Ask'],data=[[symbol, bid, ask]])
     df.set_index('symbol', inplace=True)
@@ -94,20 +102,14 @@ def get_current_price(symbol):
     return 0.5 * (bid_price + ask_price)
 
 
-
 #order_id = place_order(account, symbol, quantity, action, order_type)
 def place_order(account, symbol, quantity, action, order_type):
     global order_queue
-    global ref_price
+    global override_price
 
     # Generate a unique order ID with timestamp
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     unique_id = "ord_id-" + str(uuid.uuid4())
-
-    if ref_price is None:
-        s = f'ref_price is None!'
-        logger.error(s)
-        raise RuntimeError(s)
 
     order = dict()
     order = {
@@ -118,7 +120,7 @@ def place_order(account, symbol, quantity, action, order_type):
         "order_type": order_type,
         "order_id": unique_id,
         "timestamp": timestamp,
-        "price": ref_price,
+        "price": get_test_price(),
         "trade_id": None 
     }
 

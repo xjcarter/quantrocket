@@ -8,6 +8,8 @@ class SimulatedPriceGenerator:
         self.current_price = starting_price
         self.average_range = average_range
         self.std_dev = std_dev
+        self.current_ohlc = None
+        self.has_ohlc = False
 
     def generate_ohlc(self):
         # Simulate Brownian motion using normally distributed random numbers
@@ -25,6 +27,8 @@ class SimulatedPriceGenerator:
 
         # Create a named tuple with OHLC values and return it
         ohlc = OHLC(open=open_price, high=high_price, low=low_price, close=close_price)
+        self.current_ohlc = ohlc
+        self.has_ohlc = True
         return ohlc
 
     def get_current_price(self):
