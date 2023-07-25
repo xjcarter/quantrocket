@@ -120,6 +120,7 @@ def get_current_price(symbol):
 def fetch_prices(symbol):
     bar = test_harness.generate_ohlc(symbol)
     now = datetime.now().strftime("%Y%m%d-%H:%M:%S")
+    logger.info(f'new bar: {now}, {bar}')
     return [now, bar.open, bar.high, low.low, bar.close] 
 
 
@@ -318,7 +319,7 @@ def main(strategy_id, universe):
     while True:
         
         with fetch_intra_prices as fetch_intra:
-            if fetch_inra16:00:
+            if fetch_intra:
                intra_prices.append( fetch_prices(symbol) )
 
         with at_open as opening:

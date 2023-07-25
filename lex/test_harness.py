@@ -58,6 +58,7 @@ def generate_ohlc(symbol):
     global ref_price
 
     ohlc = PRICE_MGR.generate_ohlc()
+    logger.info('ohlc_bar: {ohlc}')
     ref_price = ohlc.close
     return ohlc 
 
