@@ -571,7 +571,8 @@ class PosMgr(object):
         def _calc_avg_price(curr_pos, curr_price, new_pos, new_price):
             x = abs(curr_pos)
             y = abs(new_pos)
-            return (( x * curr_price ) + ( y* new_price)) / ( x+ y)
+            avp = (( x * curr_price ) + ( y* new_price)) / ( x+ y)
+            return round(avp, 5) 
         
 
         new_node = pos_node.copy()

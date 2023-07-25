@@ -2,7 +2,7 @@ from clockutils import TripWire, time_from_str
 from datetime import datetime
 #from quantrocket.realtime import get_prices 
 #from quantrocket.blotter import place_order, download_executions
-import test_harness, price_generator
+import test_harness as TESTER 
 import time, pandas 
 from posmgr import PosMgr, TradeSide, Trade, OrderType, OrderTicket
 import calendar_calcs
@@ -48,7 +48,7 @@ def load_historical_data(symbol):
         raise e
     
     ## alter data for testing 
-    stock_df = test_harness.alter_data_to_anchor(stock_df, adjust_close=-0.03)
+    stock_df = TESTER.alter_data_to_anchor(stock_df, adjust_close=-0.03)
 
     return stock_df
 
@@ -102,7 +102,7 @@ def get_current_bid_ask(symbol):
 
     fields = ["Bid", "Ask"]
     #prices = get_prices([symbol], fields)
-    prices = test_harness.get_prices([symbol], fields)
+    prices = TESTER.get_prices([symbol], fields)
 
     # Extract the bid and ask prices for SPY
     bid_price = prices.loc[symbol, "Bid"]
@@ -118,7 +118,7 @@ def get_current_price(symbol):
     return avg_price
 
 def fetch_prices(symbol):
-    bar = test_harness.generate_ohlc(symbol)
+    bar = TESTER.generate_ohlc(symbol)
     now = datetime.now().strftime("%Y%m%d-%H:%M:%S")
     logger.info(f'new bar: {now}, {bar}')
     return [now, bar.open, bar.high, low.low, bar.close] 
@@ -128,8 +128,8 @@ def check_exit(position_node, stdv):
 
     current_pos, entry_price = position_node.position, position_node.price
     duration = position_node.duration
-    test_harness.price_skew = 0.10
-    current_price = test_harness.get_current_price(position_node.name)
+    TESTER.price_skew = 0.10
+    current_price = TESTER.get_current_price(position_node.name)
     #current_price = get_current_price(position_node.name)
 
     get_out = False
@@ -183,7 +183,7 @@ def create_order(side, amount, symbol, order_type=OrderType.MKT, order_notes=Non
 
     #order_id = place_order(account, symbol, quantity, action, order_type)
     #order_id = place_order(**order)
-    order_id = test_harness.place_order(**order)
+    order_id = TESTER.place_order(**order)
     logger.info(f'order_id: {order_id} submitted.')
 
     order_info = {
@@ -229,7 +229,7 @@ def check_for_fills():
     Account: The account associated with the execution.
     Strategy: The strategy or algorithm associated with the execution.
 
-    FIX THIS: you have to adjust _convert_quantrocket_fill 
+    FIX TESTERIS: you have to adjust _convert_quantrocket_fill 
     """
 
     def _get_side(fill):
@@ -260,7 +260,7 @@ def check_for_fills():
     logger.info('checking for fills.')
 
     #filled_orders = download_executions(orderid= orderid)
-    filled_orders = test_harness.download_executions(orderid= orderid)
+    filled_orders = TESTER.download_executions(orderid= orderid)
 
     for fill in filled_orders:
         logger.info(f'Processing trade_id: {fill["trade_id"]}')
@@ -329,8 +329,8 @@ def main(strategy_id, universe):
                     trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
                     if fire_entry and trade_amt > 0:
 
-                        test_harness.price_skew = 0
-                        open_price = test_harness.get_current_price(position_node.name)
+                        TESTER.price_skew = 0
+                        open_price = TESTER.get_current_price(position_node.name)
 
                         logger.info(f'opening price: {open_price}')
                         order_info = create_order(TradeSide.BUY, symbol, trade_amt, order_notes=strategy_id)

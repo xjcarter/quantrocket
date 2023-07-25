@@ -25,7 +25,6 @@ def check_exit(position_node, stdv):
 
     current_pos, entry_price = position_node.position, position_node.price
     duration = position_node.duration
-    test_harness.price_skew = -0.50
     #current_price = get_current_price(position_node.name)
     current_price = test_harness.get_current_price(position_node.name)
 
@@ -51,6 +50,7 @@ pmgr.initialize('Strategy1', ['SPY'])
 
 pos_node = pmgr.get_position('SPY')
 test_harness.ref_price = pos_node.price
+test_harness.price_skew = 1.50
 check_exit(pos_node, stdv=0.5)
 
 

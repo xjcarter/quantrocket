@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 from posmgr import OrderType
-from price_generator import SimulatedPriceGenerator
+from price_simulator import SimulatedPriceGenerator
 
 import logging
 # Create a logger specific to __main__ module
@@ -54,12 +54,12 @@ def alter_data_to_anchor(stock_df, adjust_close=0):
     return stock_df 
 
 
-def generate_ohlc(symbol):
+def generate_ohlc(symbol=None):
     global ref_price
+    global PRICE_MGR
 
     ohlc = PRICE_MGR.generate_ohlc()
-    logger.info('ohlc_bar: {ohlc}')
-    ref_price = ohlc.close
+    logger.info(f'ohlc_bar: {ohlc}')
     return ohlc 
 
 """
@@ -73,7 +73,9 @@ def get_prices(symbol_list, fields):
     global price_skew
 
     symbol = symbol_list[0]
-    generate_ohlc(symbol)
+    if ref_price is None:
+        ohlc = generate_ohlc()
+        ref_price = ohlc.close
 
     logger.info(f'fetching prices: {ref_price}, skew = {price_skew}')
     ref_price += price_skew
