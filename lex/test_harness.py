@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 from posmgr import OrderType
-from price_simulator import SimulatedPriceGenerator
+from price_simulator import SimulatedPriceGenerator, FirstLastPriceGenerator
 
 import logging
 # Create a logger specific to __main__ module
@@ -26,6 +26,11 @@ PRICE_MGR = SimulatedPriceGenerator(100.0, 0.50, 0.20)
 
 YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/work/trading/data/')
 
+## reset price generator to post a first price and last price 
+## as a price stream: ie  first_price, last_price, last_price...
+def set_first_last_prices(starting_price, ending_price):
+    global PRICE_MGR
+    PRICE_MGR = FirstLastPriceGenerator(starting_price, ending_price)
 
 ## force yesterday's close to be above/below the current anchor
 ## use adjust_close to tweak the close relative to the current anchor
@@ -54,7 +59,7 @@ def alter_data_to_anchor(stock_df, adjust_close=0):
     return stock_df 
 
 
-def generate_ohlc(symbol=None):
+def generate_ohlc():
     global PRICE_MGR
 
     ohlc = PRICE_MGR.generate_ohlc()

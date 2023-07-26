@@ -118,7 +118,7 @@ def get_current_price(symbol):
     return avg_price
 
 def fetch_prices(symbol):
-    bar = TESTER.generate_ohlc(symbol)
+    bar = TESTER.generate_ohlc()
     now = datetime.now().strftime("%Y%m%d-%H:%M:%S")
     logger.info(f'new bar: {now}, {bar}')
     return [now, bar.open, bar.high, low.low, bar.close] 
@@ -353,8 +353,8 @@ def main(strategy_id, universe):
         with at_end_of_day as end_of_day:
             if end_of_day:
                 today = datetime.today().strftime("%Y%m%d")
-                create_directory(f'{INTRA_PRICES_DIRECTORY}/intraday_data/')
-                intra_file = f'{INTRA_PRICES_DIRECTORY}/intraday_data/{symbol}.{today}.csv'
+                create_directory(f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/')
+                intra_file = f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/{symbol}.{today}.csv'
                 dump_intraday_prices(intra_prices, intra_file) 
                 break
 
@@ -362,5 +362,6 @@ def main(strategy_id, universe):
 
 
 if __name__ == "__main__":
-    main(u.strategy_id, universe=u.universe)
+    main(strategy_id="Strategy2", universe=["SPY"])
+    #main(u.strategy_id, universe=u.universe)
 
