@@ -34,11 +34,13 @@ INTRA_PRICES_DIRECTORY = os.environ.get('INTRA_PRICES_DIRECTORY', '/home/jcarter
 
 POS_MGR = PosMgr()
 
-ANCHOR_ADJUST = -0.03
+ANCHOR_ADJUST = 0 
 MAX_HOLD_PERIOD = 9
 
 
 def load_historical_data(symbol):
+    global ANCHOR_ADJUST
+
     ## load yahoo OHLC data
     try:
         stock_file = f'{YAHOO_DATA_DIRECTORY}/{symbol}.csv'
@@ -282,8 +284,13 @@ def dump_intraday_prices(data, filepath):
 def main(strategy_id, universe):
 
     global POS_MGR
+    global ANCHOR_ADJUST 
 
     set_fixed = False
+    ANCHOR_ADJUST = -1.50
+    OPEN_TIME = "09:30"
+    CLOSE_TIME = "15:57"
+    EOD_TIME = "16:05"
 
     ## set fixed price generation from simulator
     ## otherwise run standard price stream simulator
@@ -317,10 +324,10 @@ def main(strategy_id, universe):
     logger.info(f'trading loop initiated.')
 
     ## trading operations schedule
-    at_open = TripWire(time_from_str("09:30"))
-    at_close = TripWire(time_from_str("15:57"))
-    at_end_of_day = TripWire(time_from_str("16:05"))
-    fetch_intra_prices = TripWire(time_from_str("09:30"), interval_reset=60, stop_at=time_from_str("16:00"))  
+    at_open = TripWire(time_from_str(OPEN_TIME))
+    at_close = TripWire(time_from_str(CLOSE_TIME))
+    at_end_of_day = TripWire(time_from_str(EOD_TIME))
+    fetch_intra_prices = TripWire(time_from_str(OPEN_TIME), interval_reset=60, stop_at=time_from_str(EOD_TIME))  
 
     intra_prices = list()
 
