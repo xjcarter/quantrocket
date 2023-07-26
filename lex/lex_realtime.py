@@ -34,6 +34,7 @@ INTRA_PRICES_DIRECTORY = os.environ.get('INTRA_PRICES_DIRECTORY', '/home/jcarter
 
 POS_MGR = PosMgr()
 
+ANCHOR_ADJUST = -0.03
 MAX_HOLD_PERIOD = 9
 
 
@@ -48,7 +49,7 @@ def load_historical_data(symbol):
         raise e
     
     ## alter data for testing 
-    stock_df = TESTER.alter_data_to_anchor(stock_df, adjust_close=-0.03)
+    stock_df = TESTER.alter_data_to_anchor(stock_df, adjust_close=ANCHOR_ADJUST)
 
     return stock_df
 
@@ -281,6 +282,14 @@ def dump_intraday_prices(data, filepath):
 def main(strategy_id, universe):
 
     global POS_MGR
+
+    set_fixed = False
+
+    ## set fixed price generation from simulator
+    ## otherwise run standard price stream simulator
+    if set_fixed:
+        p_start, p_end = 100.00, 99.00
+        TESTER.set_first_last_prices(starting_price=pstart, ending_price=p_end)
 
     logger.info(f'starting strategy.')
 
