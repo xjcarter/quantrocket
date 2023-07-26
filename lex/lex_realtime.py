@@ -39,7 +39,6 @@ MAX_HOLD_PERIOD = 9
 
 
 def load_historical_data(symbol):
-    global ANCHOR_ADJUST
 
     ## load yahoo OHLC data
     try:
@@ -94,9 +93,10 @@ def calc_metrics(stock_df):
     if anchor.count() > 0:
         anchor_bar, bkout = anchor.valueAt(0)
         ## show last indcator date, anchor bar and close
-        logger.info(f'>>> {ldate}: A:{anchor_bar}, C:{last_close}')
         if bkout < 0 and end_of_week == False:
             valid_entry = True
+        x = "> " if valid_entry else "< "
+        logger.info(f'{x} {ldate}: A:{anchor_bar}, C:{last_close}')
 
     return valid_entry, stdev.valueAt(0) 
 
@@ -124,7 +124,7 @@ def fetch_prices(symbol):
     bar = TESTER.generate_ohlc()
     now = datetime.now().strftime("%Y%m%d-%H:%M:%S")
     logger.info(f'new bar: {now}, {bar}')
-    return [now, bar.open, bar.high, low.low, bar.close] 
+    return [now, bar.open, bar.high, bar.low, bar.close] 
 
 
 def check_exit(position_node, stdv):
@@ -145,6 +145,7 @@ def check_exit(position_node, stdv):
             get_out = True
         elif (entry_price - current_price) > stdv * 2: 
             alert = 'STOP ON CLOSE'
+            logger.warning('stop on close triggered! current_price= {current_price}')
             get_out = True 
 
     logger.info(f'check_exit: exit= {get_out}, {position_node.name}, {current_pos}')
@@ -215,7 +216,6 @@ def check_for_fills():
     global POS_MGR
 
     ## handle fills and post all files through PosMgr object
-    ## handle trade fills only stays up for 30 min
 
     """
     Here are some common fields that you may typically find in the executions DataFrame:
@@ -236,7 +236,7 @@ def check_for_fills():
 
     def _get_side(fill):
         sides = { 'BUY': TradeSide.BUY, 'SELL': TradeSide.SELL }
-        v = order.get('side', fill.get('action'))
+        v = fill.get('side', fill.get('action'))
         if v is not None:
             return sides[v]
         else:
@@ -266,7 +266,7 @@ def check_for_fills():
 
     for fill in filled_orders:
         logger.info(f'Processing trade_id: {fill["trade_id"]}')
-        POS_MGR.update_trades( order, conversion_func=_convert_quantrocket_fill )
+        POS_MGR.update_trades( fill, conversion_func=_convert_quantrocket_fill )
 
 def create_directory(directory_path):
     if not os.path.exists(directory_path):
@@ -278,7 +278,7 @@ def dump_intraday_prices(data, filepath):
         df.to_csv(filepath)
     except:
         logger.error(f"couldn't write intraday data: {filepath}")
-        raise RuntimeError
+        raise RuntimeError(f"couldn't write intraday data: {filepath}")
 
 
 def main(strategy_id, universe):
@@ -318,9 +318,11 @@ def main(strategy_id, universe):
     logger.info(f'{symbol} current position = {current_pos}')
 
     data = load_historical_data(symbol)
-    fire_entry, stdv = calc_metrics(data)
 
+    logger.info(f'calculating trading metrics.')
+    fire_entry, stdv = calc_metrics(data)
     logger.info(f'trading metrics calculated.')
+
     logger.info(f'trading loop initiated.')
 
     ## trading operations schedule
@@ -343,13 +345,14 @@ def main(strategy_id, universe):
                 if current_pos == 0:
                     trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
                     if fire_entry and trade_amt > 0:
+                        logger.info(f'entry triggered.')
 
                         open_price = get_current_price(position_node.name)
 
                         logger.info(f'opening price: {open_price}')
                         order_info = create_order(TradeSide.BUY, symbol, trade_amt, order_notes=strategy_id)
                         POS_MGR.register_order(order_info)
-                    else:
+                    elif fire_entry:
                         logger.warning('entry triggered but trade_amt == 0!')
                 else:
                     logger.info(f'no trade: working open position: {symbol} {current_pos}')
@@ -372,6 +375,7 @@ def main(strategy_id, universe):
                 create_directory(f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/')
                 intra_file = f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/{symbol}.{today}.csv'
                 dump_intraday_prices(intra_prices, intra_file) 
+                logger.info('end of dat completed.')
                 break
 
         time.sleep(1)
