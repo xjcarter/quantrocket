@@ -4,7 +4,7 @@ from datetime import datetime
 #from quantrocket.blotter import place_order, download_executions
 import test_harness as TESTER 
 import time, pandas 
-from posmgr import PosMgr, TradeSide, Trade, OrderType, OrderTicket
+from posmgr import PosMgr, TradeSide, Trade, OrderType
 import calendar_calcs
 from indicators import MondayAnchor, StDev
 import os
@@ -96,8 +96,8 @@ def calc_metrics(stock_df):
         ## show last indcator date, anchor bar and close
         if bkout < 0 and end_of_week == False:
             valid_entry = True
-        x = "> " if valid_entry else "< "
-        logger.info(f'{x} {ldate}: A:{anchor_bar}, C:{last_close}')
+        x = "<-" if valid_entry else ""
+        logger.info(f'{ldate}: A:{anchor_bar}, C: {last_close} {x}')
 
     return valid_entry, stdev.valueAt(0) 
 
@@ -262,8 +262,9 @@ def check_for_fills():
 
     logger.info('checking for fills.')
 
-    #filled_orders = download_executions(orderid= orderid)
-    filled_orders = TESTER.download_executions(orderid= orderid)
+    #filled_orders = download_executions()
+    start_date = end_date = datetime.today().date()
+    filled_orders = TESTER.download_executions(start_date, end_date, accounts=[IB_ACCOUNT_NAME])
 
     for fill in filled_orders:
         logger.info(f'Processing trade_id: {fill["trade_id"]}')
@@ -288,8 +289,8 @@ def main(strategy_id, universe):
     global ANCHOR_ADJUST 
 
     set_fixed = False
-    ANCHOR_ADJUST = -1.50
-    OPEN_TIME = "09:30"
+    ANCHOR_ADJUST = -1.50 
+    OPEN_TIME = "11:00"
     CLOSE_TIME = "15:57"
     EOD_TIME = "16:05"
 
@@ -297,7 +298,7 @@ def main(strategy_id, universe):
     ## otherwise run standard price stream simulator
     if set_fixed:
         p_start, p_end = 100.00, 99.00
-        TESTER.set_first_last_prices(starting_price=pstart, ending_price=p_end)
+        TESTER.set_first_last_prices(starting_price=p_start, ending_price=p_end)
 
     logger.info(f'starting strategy.')
 
@@ -334,6 +335,8 @@ def main(strategy_id, universe):
 
     intra_prices = list()
 
+
+    test_stop = TripWire(time_from_str("11:10"))
     while True:
         
         with fetch_intra_prices as fetch_intra:
@@ -344,7 +347,7 @@ def main(strategy_id, universe):
             if opening:
 
                 if current_pos == 0:
-                    trade_amt = calc_trade_amount(symbol, position_node.trade_capital)
+                    trade_amt = calc_trade_amount(symbol, POS_MGR.trade_capital)
                     if fire_entry and trade_amt > 0:
                         logger.info(f'entry triggered.')
 
@@ -377,6 +380,10 @@ def main(strategy_id, universe):
                 intra_file = f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/{symbol}.{today}.csv'
                 dump_intraday_prices(intra_prices, intra_file) 
                 logger.info('end of dat completed.')
+                break
+
+        with test_stop as stopper:
+            if stopper:
                 break
 
         time.sleep(1)

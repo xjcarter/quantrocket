@@ -177,7 +177,7 @@ def create_order(side, amount, symbol, order_type=OrderType.MKT, order_notes=Non
 
 
 #filled_orders = download_executions(start_date, end_date, accounts=IB_ACCOUNT_NAME)
-def download_executions(start_date, end_date, accounts):
+def download_executions(start_date, end_date, accounts=None):
     global order_queue
     
     rq = list()
