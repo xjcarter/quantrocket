@@ -6,8 +6,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s',
-                    datefmt='%a %Y-%m-%d %H:%M:%S')
+FORMAT = "%(asctime)s: %(levelname)8s [%(module)15s:%(lineno)3d - %(funcName)20s ] %(message)s"
+#FORMAT = "%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s"
+formatter = logging.Formatter(FORMAT, datefmt='%a %Y-%m-%d %H:%M:%S')
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
@@ -72,53 +73,56 @@ class TripWire:
         pass
 
 
-if __name__ == "__main__":
+def main_func():
     v = time_from_str("11:30")
     j = date_from_str("20111212")
-    print(v, type(v))
-    print(j, type(j))
+    logger.info(f'{v}, {type(v)}')
+    logger.info(f'{j}, {type(j)}')
 
     trigger_dt = datetime.now() + timedelta(seconds=5)
     end_dt = datetime.now() + timedelta(seconds=7)
     tt = TripWire(trigger_dt)
 
     now = datetime.now()
-    print(f'start: {trigger_dt}, end: {end_dt}')
+    logger.info(f'start: {trigger_dt}, end: {end_dt}')
     while now < end_dt:
-        print(f'countdown: {now}')
+        logger.info(f'countdown: {now}')
         with tt as t:
             if t: 
                 now = datetime.now()
-                print(f'executing at: {now}')
-                print('TripWire activated')
+                logger.info(f'executing at: {now}')
+                logger.info('TripWire activated')
 
         now = datetime.now()
         time.sleep(1)
 
-    print('\n\ntest range TripWire')
-    print('sleeping for 10 seconds.')
+    logger.info('test range TripWire')
+    logger.info('sleeping for 10 seconds.')
     time.sleep(10)
     trigger_dt = datetime.now() + timedelta(seconds=5)
     stop_dt = datetime.now() + timedelta(seconds=60)
     end_dt = datetime.now() + timedelta(seconds=100)
     in_between = TripWire(trigger_dt, interval_reset=5, stop_at=stop_dt)
     at_end = TripWire(end_dt)
-    print('reseting every 5 seconds.')
-    print(f'start: {trigger_dt}, stop: {stop_dt}')
+    logger.info('reseting every 5 seconds.')
+    logger.info(f'start: {trigger_dt}, stop: {stop_dt}')
     while True:
         with in_between as btwn:
             if btwn:
                 now = datetime.now()
-                print(f'in_between at: {now}')
+                logger.critical(f'in_between at: {now}')
         
         with at_end as end:
             if end:
                 now = datetime.now()
-                print(f'end_at: {now}')
+                logger.info(f'end_at: {now}')
                 break
 
         time.sleep(1)
 
+
+if __name__ == "__main__":
+    main_func()
 
 
 

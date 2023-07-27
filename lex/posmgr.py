@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s',
-                    datefmt='%a %Y-%m-%d %H:%M:%S')
+FORMAT = "%(asctime)s: %(levelname)8s [%(module)15s:%(lineno)3d - %(funcName)20s ] %(message)s"
+#FORMAT = "%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s"
+formatter = logging.Formatter(FORMAT, datefmt='%a %Y-%m-%d %H:%M:%S')
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 

@@ -86,27 +86,27 @@ class FirstLastPriceGenerator:
         v = self.generate_ohlc()
         return v.close
 
+if __name__ == "__main__":
+    # Example usage:
+    starting_price = 100.0
+    ending_price = 111.0
+    average_range = 0.5
+    std_dev = 0.2
 
-# Example usage:
-starting_price = 100.0
-ending_price = 111.0
-average_range = 0.5
-std_dev = 0.2
+    price_generator = SimulatedPriceGenerator(starting_price, average_range, std_dev)
 
-price_generator = SimulatedPriceGenerator(starting_price, average_range, std_dev)
+    # Generate 10 simulated 1-minute bars
+    for _ in range(10):
+        ohlc = price_generator.generate_ohlc()
+        print(ohlc)
+        # Access OHLC values with associated price labels
+        # print(ohlc.open, ohlc.high, ohlc.low, ohlc.close)
 
-# Generate 10 simulated 1-minute bars
-for _ in range(10):
-    ohlc = price_generator.generate_ohlc()
-    print(ohlc)
-    # Access OHLC values with associated price labels
-    # print(ohlc.open, ohlc.high, ohlc.low, ohlc.close)
-
-print("\n")
-print('first-last generator:')
-price_generator = FirstLastPriceGenerator(starting_price, ending_price)
-for _ in range(10):
-    ohlc = price_generator.generate_ohlc()
-    print(ohlc)
-    # Access OHLC values with associated price labels
-    # print(ohlc.open, ohlc.high, ohlc.low, ohlc.close)
+    print("\n")
+    print('first-last generator:')
+    price_generator = FirstLastPriceGenerator(starting_price, ending_price)
+    for _ in range(10):
+        ohlc = price_generator.generate_ohlc()
+        print(ohlc)
+        # Access OHLC values with associated price labels
+        # print(ohlc.open, ohlc.high, ohlc.low, ohlc.close)
