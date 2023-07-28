@@ -664,7 +664,7 @@ class PosMgr(object):
                     working_order.open_qty -= fill_amt
                 self.write_orders( datetime.now() )
             else:
-                logger.error('cannot not find order_id:{order_id} in order_ledger.')
+                logger.error(f'cannot not find order_id:{order_id} in order_ledger.')\
 
             ## NOTE: trade_obj.units is ALWAYS > 0
 

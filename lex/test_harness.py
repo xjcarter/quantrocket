@@ -108,8 +108,8 @@ def get_current_price(symbol):
     return 0.5 * (bid_price + ask_price)
 
 
-#order_id = place_order(account, symbol, quantity, action, order_type)
-def place_order(account, symbol, quantity, action, order_type):
+#order_id = place_order(account, quantity, symbol, action, order_type)
+def place_order(account, quantity, symbol, action, order_type):
     global order_queue
     global override_price
 
@@ -139,12 +139,12 @@ def place_order(account, symbol, quantity, action, order_type):
 
 ## creates and submits order
 ## order_notes is a field to hold any info that many help in auditting trades
-def create_order(side, amount, symbol, order_type=OrderType.MKT, order_notes=None):
+def create_order(side, symbol, amount, order_type=OrderType.MKT, order_notes=None):
 
     order = {
         "account": 'TEST_ACCOUNT',
-        "symbol": symbol,
         "quantity": amount,
+        "symbol": symbol,
         "action": side.value,
         "order_type": order_type.value
     }

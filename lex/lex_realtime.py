@@ -7,14 +7,14 @@ import time, pandas
 from posmgr import PosMgr, TradeSide, Trade, OrderType
 import calendar_calcs
 from indicators import MondayAnchor, StDev
-import os
+import os, sys, json
 import uuid
 
 import logging
 # Create a logger specific to __main__ module
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-console_handler = logging.StreamHandler()
+console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.DEBUG)
 FORMAT = "%(asctime)s: %(levelname)8s [%(module)15s:%(lineno)3d - %(funcName)20s ] %(message)s"
 #FORMAT = "%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s"
@@ -156,7 +156,7 @@ def check_exit(position_node, stdv):
 
 ## creates and submits order
 ## order_notes is a field to hold any info that many help in auditting trades
-def create_order(side, amount, symbol, order_type=OrderType.MKT, order_notes=None):
+def create_order(side, symbol, amount, order_type=OrderType.MKT, order_notes=None):
 
     def _new_order_id(tag=None):
         # Generate a unique order ID with timestamp
@@ -171,8 +171,8 @@ def create_order(side, amount, symbol, order_type=OrderType.MKT, order_notes=Non
 
     order = {
         "account": IB_ACCOUNT_NAME,
-        "symbol": symbol,
         "quantity": amount,
+        "symbol": symbol,
         "action": side.value,
         "order_type": order_type.value
     }
@@ -248,7 +248,7 @@ def check_for_fills():
         trd = Trade( fill['order_id'] )
         trd.asset = fill["symbol"]
         trd.side = _get_side(fill)
-        trd.units = abs(fill["quantity"])
+        trd.units = abs(int(fill["quantity"]))
         trd.price = fill["price"]
 
         ## conditionals
@@ -290,9 +290,10 @@ def main(strategy_id, universe):
 
     set_fixed = False
     ANCHOR_ADJUST = -1.50 
-    OPEN_TIME = "11:00"
-    CLOSE_TIME = "15:57"
-    EOD_TIME = "16:05"
+    OPEN_TIME = "22:50"
+    CLOSE_TIME = "23:57"
+    EOD_TIME = "23:55"
+    TEST_STOPPER = "23:15"
 
     ## set fixed price generation from simulator
     ## otherwise run standard price stream simulator
@@ -336,7 +337,7 @@ def main(strategy_id, universe):
     intra_prices = list()
 
 
-    test_stop = TripWire(time_from_str("11:10"))
+    test_stop = TripWire(time_from_str(TEST_STOPPER))
     while True:
         
         with fetch_intra_prices as fetch_intra:
@@ -379,11 +380,16 @@ def main(strategy_id, universe):
                 create_directory(f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/')
                 intra_file = f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/{symbol}.{today}.csv'
                 dump_intraday_prices(intra_prices, intra_file) 
-                logger.info('end of dat completed.')
+                logger.info('end of day completed.')
                 break
 
         with test_stop as stopper:
             if stopper:
+                today = datetime.today().strftime("%Y%m%d")
+                create_directory(f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/')
+                intra_file = f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/{symbol}.{today}.csv'
+                dump_intraday_prices(intra_prices, intra_file) 
+                logger.info('end of day completed.')
                 break
 
         time.sleep(1)
