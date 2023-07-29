@@ -123,9 +123,10 @@ def get_current_price(symbol):
 
 def fetch_prices(symbol):
     bar = TESTER.generate_ohlc()
-    now = datetime.now().strftime("%Y%m%d-%H:%M:%S")
-    logger.info(f'new bar: {now}, {bar}')
-    return [now, bar.open, bar.high, bar.low, bar.close] 
+    now = datetime.now()
+    dt, tm = now.strftime("%Y%m%d"), now.strftime("%H:%M:%S")
+    logger.info(f'new bar: {dt}-{tm}, {bar}')
+    return [dt, tm, bar.open, bar.high, bar.low, bar.close] 
 
 
 def check_exit(position_node, stdv):
@@ -245,8 +246,9 @@ def check_for_fills():
 
     ## map quantrocket order fill
     def _convert_quantrocket_fill(fill):
-        trd = Trade( fill['order_id'] )
+        trd = Trade( fill['trade_id'] )
         trd.asset = fill["symbol"]
+        trd.order_id = fill['order_id']
         trd.side = _get_side(fill)
         trd.units = abs(int(fill["quantity"]))
         trd.price = fill["price"]
@@ -275,8 +277,9 @@ def create_directory(directory_path):
         os.makedirs(directory_path)
 
 def dump_intraday_prices(data, filepath):
-    df = pandas.DataFrame(columns=['Date','Open','High','Low','Close'], data=data)
+    df = pandas.DataFrame(columns=['Date','Time','Open','High','Low','Close'], data=data)
     try:
+        df.set_index('Date',inplace=True)
         df.to_csv(filepath)
     except:
         logger.error(f"couldn't write intraday data: {filepath}")
@@ -288,18 +291,11 @@ def main(strategy_id, universe):
     global POS_MGR
     global ANCHOR_ADJUST 
 
-    set_fixed = False
     ANCHOR_ADJUST = -1.50 
-    OPEN_TIME = "22:50"
-    CLOSE_TIME = "23:57"
-    EOD_TIME = "23:55"
-    TEST_STOPPER = "23:15"
+    OPEN_TIME = "20:40"
+    CLOSE_TIME = "20:42"
+    EOD_TIME = "20:44"
 
-    ## set fixed price generation from simulator
-    ## otherwise run standard price stream simulator
-    if set_fixed:
-        p_start, p_end = 100.00, 99.00
-        TESTER.set_first_last_prices(starting_price=p_start, ending_price=p_end)
 
     logger.info(f'starting strategy.')
 
@@ -337,7 +333,6 @@ def main(strategy_id, universe):
     intra_prices = list()
 
 
-    test_stop = TripWire(time_from_str(TEST_STOPPER))
     while True:
         
         with fetch_intra_prices as fetch_intra:
@@ -368,6 +363,7 @@ def main(strategy_id, universe):
 
                 position_node = POS_MGR.get_position(symbol)
                 fire_exit, current_pos = check_exit(position_node, stdv)
+                logger.info(f'{symbol} {current_pos}, fire_exit = {fire_exit}')
                 if fire_exit: 
                     order_info = create_order(TradeSide.SELL, symbol, current_pos, order_notes=strategy_id)
                     POS_MGR.register_order(order_info)
@@ -379,18 +375,13 @@ def main(strategy_id, universe):
                 today = datetime.today().strftime("%Y%m%d")
                 create_directory(f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/')
                 intra_file = f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/{symbol}.{today}.csv'
+                logger.info('saving intraday prices ...')
                 dump_intraday_prices(intra_prices, intra_file) 
+                logger.info('updating position durations ...')
+                POS_MGR.update_durations()
                 logger.info('end of day completed.')
                 break
 
-        with test_stop as stopper:
-            if stopper:
-                today = datetime.today().strftime("%Y%m%d")
-                create_directory(f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/')
-                intra_file = f'{INTRA_PRICES_DIRECTORY}/intraday_data/{strategy_id}/{symbol}.{today}.csv'
-                dump_intraday_prices(intra_prices, intra_file) 
-                logger.info('end of day completed.')
-                break
 
         time.sleep(1)
 

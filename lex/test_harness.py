@@ -36,7 +36,7 @@ def set_first_last_prices(starting_price, ending_price):
 ## force yesterday's close to be above/below the current anchor
 ## use adjust_close to tweak the close relative to the current anchor
 def alter_data_to_anchor(stock_df, adjust_close=0):
-    global override_price 
+    #global override_price 
 
     from indicators import MondayAnchor
     
@@ -52,8 +52,9 @@ def alter_data_to_anchor(stock_df, adjust_close=0):
         last_index = idate
 
     anchor_bar, _ = anchor.valueAt(0)
-    override_price = anchor_bar['Low'] + adjust_close
-    stock_df.at[last_index,'Close'] = override_price
+    #override_price = anchor_bar['Low'] + adjust_close
+    close_override = anchor_bar['Low'] + adjust_close
+    stock_df.at[last_index,'Close'] = close_override
 
     logger.info(f'anchor_bar = {anchor_bar}, override_price = {override_price}')
 
@@ -94,7 +95,7 @@ def get_prices(symbol_list, fields):
     logger.info(f'fetching prices: {override_price}, skew = {override_price_skew}')
     test_price = get_test_price() 
     logger.info(f'new override_price = {override_price}')
-    bid, ask = test_price - 0.1, test_price
+    bid, ask = test_price - 0.02, test_price
     logger.info(f'bid: {bid}, ask: {ask}')
     df = pandas.DataFrame(columns=['symbol','Bid','Ask'],data=[[symbol, bid, ask]])
     df.set_index('symbol', inplace=True)
@@ -130,7 +131,7 @@ def place_order(account, quantity, symbol, action, order_type):
         "trade_id": None 
     }
 
-    logger.info('order submitted')
+    logger.info(f'order submitted: order_id = {unique_id}')
     logger.info(json.dumps(order, ensure_ascii=False, indent =4 ))
     order_queue.append(order)
 

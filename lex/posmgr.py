@@ -176,11 +176,14 @@ class Trade(object):
         return new_trade
     
     def convert_timestamp(self, timestamp):
-        self.timestamp = timestamp.strftime('%Y%m%d-%H%M%S')
+        if isinstance(timestamp, datetime):
+            self.timestamp = timestamp.strftime('%Y%m%d-%H:%M:%S')
+        else:
+            self.stamp_timestamp()
 
     def stamp_timestamp(self):
         now = datetime.now()
-        self.timestamp = now.strftime('%Y%m%d-%H%M%S')
+        self.timestamp = now.strftime('%Y%m%d-%H:%M:%S')
     
 
 class PosMgr(object):
@@ -618,6 +621,15 @@ class PosMgr(object):
 
         return new_node, pos_detail
 
+    ## update duration on open positions (AT EOD)
+    def update_durations(self):
+        for idx, pos_node in enumerate(self.positions):
+            if pos_node.position != 0:
+                pos_node.duration += 1
+                d = pos_node.duration
+                logger.info(f'updated duration: {pos_node.name} {pos_node.position}: duration= {d}')
+        now = datetime.now()
+        self.write_positions(now)
 
     ## take a new trade and update positions 
     ## and update position and trade files
@@ -638,16 +650,18 @@ class PosMgr(object):
         if conversion_func == None:
             conversion_func = _convert_trade
 
+        logger.info(f"trade fill recv'd: {trade_object}")
         trade_obj = conversion_func(trade_object)
         trade_dump = json.dumps(trade_obj.__dict__, ensure_ascii=False, indent=4)
+        logger.info(f'converted fill: {trade_dump}')
 
         ## make sure you are not re-processing the same trade
         processed_trade_ids = [ x['trade_id'] for x in self.trades ]
         new_trade = trade_obj.trade_id not in processed_trade_ids 
 
         if new_trade:
-            self.trades.append(trade_obj)
-            logger.info(f'captured trade: {trade_dump}')
+            self.trades.append(trade_obj.to_dict())
+            logger.info(f'captured new trade: {trade_dump}')
 
             ## executed trades contain the original order_id submitted
             ## and a trade_id to identify the executed trade
