@@ -141,7 +141,6 @@ class Trade(object):
         ## originating order_id associated with this trade,
         ## ie multiple trade_ids can belong to a single order_id (split fills)
         self.order_id = None 
-        self.strategy_id = None
         self.side = None
         self.asset = None
         self.units = 0
@@ -228,6 +227,7 @@ class PosMgr(object):
             datetime.strptime(date_string, "%Y%m%d")
             return True
         except ValueError:
+            logger.error(f'incorrect date_string format for file: {filename}')
             return False
 
     ## read position node file:
@@ -373,7 +373,7 @@ class PosMgr(object):
                 logger.info(f"{strategy_id}: accountId: {account_id}, cash: {cash}, timestamp: {timestamp}")
         else:
             err = f"No accounts found for strategyId '{strategy_id}'."
-            logger.info(err)
+            logger.critical(err)
             raise RuntimeError(err)
 
         # Close the cursor and connection
@@ -637,10 +637,10 @@ class PosMgr(object):
 
         def _convert_trade(trade_string):
             ##FIX this
-            ##convert trade_string to trade object
-            ### fake_trade = '12345, Strategy1, BUY, QQQ, 315, 25.67'
+            ##convert trade_string representing a trade fill into trade object
+            ### fake_trade = '12345, BUY, QQQ, 315, 25.67'
             vals = [ x.strip() for x in trade_string.split(',') ]
-            cols = [ 'trade_id', 'strategy_id', 'side', 'asset', 'units', 'price' ]
+            cols = [ 'trade_id', 'side', 'asset', 'units', 'price' ]
             t_obj = Trade()
             t_obj.from_dict( dict(zip(cols, vals)) ) 
             t_obj.stamp_timestamp()
@@ -675,6 +675,7 @@ class PosMgr(object):
                 if fill_amt > open_qty:
                     logger.error(f'order_id:{order_id}, fill_amt:{fill_amt} > open_qty:{open_qty}.')
                 if open_qty > 0:
+                    logger.warning(f'partial fill: order_id:{order_id}, target_qty:{open_qty}, fiil_amt:{fill_amt}') 
                     working_order.open_qty -= fill_amt
                 self.write_orders( datetime.now() )
             else:
