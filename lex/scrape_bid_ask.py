@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 
-def scrape_bid_ask_prices(symbol):
+def get_bid_ask(symbol):
 
     def _strip(quote_str):
         ## expecting a string in the form: "price x size", ie.  51.20 x 1000 
@@ -43,7 +43,7 @@ def scrape_bid_ask_prices(symbol):
         return None, None 
 
 if __name__ == "__main__":
-    bid_price, ask_price = scrape_bid_ask_prices('SPY')
+    bid_price, ask_price = get_bid_ask('SPY')
 
     print(f"Bid Price: {bid_price}")
     print(f"Ask Price: {ask_price}")
