@@ -12,13 +12,12 @@ eod = TripWire(time_from_str("16:00"))
 
 time_series = []
 while True:
-    with constant_snap as snap_prices:
-        if snap_prices:
+    with constant_snap as snapper:
+        if snapper:
             bid, ask, mid = p.snap_prices()
-            print(f'snap: {snap_prices.datetime}: {bid}, {ask}')
-            nn = datetime.now()
-            dt_snap = nn.strftime("%Y%m%d")
-            time_snap = nn.strftime("%H%M%S")
+            print(f'snap: {snapper.now}: {bid}, {ask}')
+            dt_snap = snapper.now.strftime("%Y%m%d")
+            time_snap = snapper.now`.strftime("%H%M%S")
             time_series.append([dt_snap, time_snap, symbol, mid])
 
     with eod as end_of_day:

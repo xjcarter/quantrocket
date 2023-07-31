@@ -55,11 +55,11 @@ class TripWire:
         self.stop_dt = stop_at
         self.triggered = False
         self.interval_reset = interval_reset
-        self.datetime = None
+        self.now = None
 
     def __enter__(self):
         current_dt = datetime.now()
-        self.datetime = current_dt
+        self.now = current_dt
         if self.stop_dt is not None and current_dt > self.stop_dt:
             return None
         if not self.triggered and current_dt >= self.trigger_dt:
