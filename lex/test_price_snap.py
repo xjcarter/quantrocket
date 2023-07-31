@@ -7,15 +7,15 @@ import pandas
 
 symbol = 'UPRO'
 p = PriceSnapper(symbol)
-constant_snap = TripWire(time_from_str("22:46"), interval_reset=60, stop_at=time_from_str("22:50"))
-eod = TripWire(time_from_str("22:50"))
+constant_snap = TripWire(time_from_str("09:30"), interval_reset=60, stop_at=time_from_str("16:00"))
+eod = TripWire(time_from_str("16:00"))
 
 time_series = []
 while True:
     with constant_snap as snap_prices:
         if snap_prices:
             bid, ask, mid = p.snap_prices()
-            print(f'snap: {bid}, {ask}')
+            print(f'snap: {snap_prices.datetime}: {bid}, {ask}')
             nn = datetime.now()
             dt_snap = nn.strftime("%Y%m%d")
             time_snap = nn.strftime("%H%M%S")
