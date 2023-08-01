@@ -1,5 +1,5 @@
 
-from price_scrapper import PriceSnapper
+from price_scraper import PriceSnapper
 from clockutils import TripWire, time_from_str
 import time
 from datetime import datetime

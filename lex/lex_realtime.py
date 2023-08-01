@@ -9,6 +9,7 @@ import calendar_calcs
 from indicators import MondayAnchor, StDev
 import os, sys, json
 import uuid
+from price_scraper import PriceSnapper
 
 import logging
 # Create a logger specific to __main__ module
@@ -34,6 +35,7 @@ YAHOO_DATA_DIRECTORY = os.environ.get('YAHOO_DATA_DIRECTORY', '/home/jcarter/wor
 INTRA_PRICES_DIRECTORY = os.environ.get('INTRA_PRICES_DIRECTORY', '/home/jcarter/junk/')
 
 POS_MGR = PosMgr()
+PRICES = None
 
 ANCHOR_ADJUST = 0 
 MAX_HOLD_PERIOD = 9
@@ -117,16 +119,34 @@ def get_current_bid_ask(symbol):
 
 def get_current_price(symbol):
     bid, ask = get_current_bid_ask(symbol)
-    avg_price = 0.5 * (bid + ask)
-    logger.info(f'current avg_price for {symbol}: {avg_price}')
-    return avg_price
+    return ask 
+
+def fetch_prices_NEW(symbol):
+    global PRICES
+    #bar = TESTER.generate_ohlc()
+    if PRICES is None:
+        PRICES = PriceSnapper(symbol, bar_length=12)
+
+    bar = PRICES.snap_prices()
+    if bar is not None:
+        now = datetime.now()
+        dt, tm = now.strftime("%Y%m%d"), now.strftime("%H:%M:%S")
+        logger.info(f'new bar: {dt}-{tm}, {bar}')
+        return [dt, tm, bar.open, bar.high, bar.low, bar.close] 
+    else:
+        return None
+
+def fetch_prices_OLD(symbol):
+    bar = TESTER.generate_ohlc()
+    nn = datetime.now()
+    dt = nn.strftime("%Y%m%d")
+    tm = nn.strftime("%H:%M:%S")
+    logger.info(f'new bar: {dt}-{tm}, {bar}')
+    return [dt, tm, bar.open, bar.high, bar.low, bar.close]
+
 
 def fetch_prices(symbol):
-    bar = TESTER.generate_ohlc()
-    now = datetime.now()
-    dt, tm = now.strftime("%Y%m%d"), now.strftime("%H:%M:%S")
-    logger.info(f'new bar: {dt}-{tm}, {bar}')
-    return [dt, tm, bar.open, bar.high, bar.low, bar.close] 
+    return fetch_prices_OLD(symbol)
 
 
 def check_exit(position_node, stdv):
@@ -292,10 +312,14 @@ def main(strategy_id, universe):
     global ANCHOR_ADJUST 
 
     ANCHOR_ADJUST = -1.50 
+    """
     OPEN_TIME = "09:30"
     CLOSE_TIME = "15:57"
     EOD_TIME = "16:05"
-
+    """
+    OPEN_TIME = "19:07"
+    CLOSE_TIME = "19:17"
+    EOD_TIME = "19:20"
 
     logger.info(f'starting strategy.')
 
@@ -334,10 +358,13 @@ def main(strategy_id, universe):
 
 
     while True:
-        
+       
+        ## capturing 1min bars with 5sec price snapshots
         with fetch_intra_prices as fetch_intra:
             if fetch_intra:
-               intra_prices.append( fetch_prices(symbol) )
+                new_bar = fetch_prices(symbol)
+                if new_bar:
+                    intra_prices.append( new_bar )
 
         with at_open as opening:
             if opening:

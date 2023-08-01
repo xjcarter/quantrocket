@@ -412,6 +412,7 @@ class PosMgr(object):
         ## recover CURRENT day detail in the case of program restart 
         self.position_detail, self.trades = self.recover_current_detail() 
 
+
         open_positions = 0 
         newbies= []
         for name in self.universe:
@@ -426,6 +427,9 @@ class PosMgr(object):
                 ## add singular position definition
                 if items == 1:
                     open_node = pos_nodes[0]
+                    ## clear duration for empty position on a new trading day
+                    if open_node.position == 0:
+                        open_node.duration = 0
                     self.positions.append(open_node)
                     open_positions += abs(open_node.position)
                 else:
@@ -443,9 +447,9 @@ class PosMgr(object):
             oo = [ x.to_dict() for x in self.positions ]
             logger.info(json.dumps(oo, ensure_ascii=False, indent=4))
 
-            
         ## position names in position file - but not in current universe
         zombies = set(pos_map.keys()).difference(self.universe)
+
         if len(zombies) > 0:
             logger.warning(f'universe loaded = {self.universe}')
             logger.warning('zombie positions not in current universe found.')
@@ -615,6 +619,7 @@ class PosMgr(object):
         pos_detail['prev_position'] = pos_node.position
         pos_detail['current_position'] = new_node.position
         pos_detail['side'] = trade_obj.side
+        pos_detail['price'] = trade_obj.price
         pos_detail['units'] = trade_obj.units
         pos_detail['trade_id'] = trade_obj.trade_id
         pos_detail['timestamp'] = trade_obj.timestamp
@@ -627,7 +632,8 @@ class PosMgr(object):
             if pos_node.position != 0:
                 pos_node.duration += 1
                 d = pos_node.duration
-                logger.info(f'updated duration: {pos_node.name} {pos_node.position}: duration= {d}')
+                logger.info(f'updated duration: {pos_node.name} position:{pos_node.position} duration= {d}')
+
         now = datetime.now()
         self.write_positions(now)
 
@@ -675,7 +681,8 @@ class PosMgr(object):
                 if fill_amt > open_qty:
                     logger.error(f'order_id:{order_id}, fill_amt:{fill_amt} > open_qty:{open_qty}.')
                 if open_qty > 0:
-                    logger.warning(f'partial fill: order_id:{order_id}, target_qty:{open_qty}, fiil_amt:{fill_amt}') 
+                    if fill_amt < open_qty:
+                        logger.warning(f'partial fill: order_id:{order_id}, target_qty:{open_qty}, fiil_amt:{fill_amt}')
                     working_order.open_qty -= fill_amt
                 self.write_orders( datetime.now() )
             else:

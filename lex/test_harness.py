@@ -6,6 +6,7 @@ from datetime import datetime
 
 from posmgr import OrderType
 from price_simulator import SimulatedPriceGenerator, FirstLastPriceGenerator
+import price_scraper
 
 import logging
 # Create a logger specific to __main__ module
@@ -88,7 +89,8 @@ bid_price = prices.loc[symbol, "Bid"]
 ask_price = prices.loc[symbol, "Ask"]
 override_price_skew = a testing parameter that allows me to control the next 'print' relative to the last get_prices request
 """
-def get_prices(symbol_list, fields):
+
+def get_prices_OLD(symbol_list, fields):
 
     symbol = symbol_list[0]
 
@@ -102,11 +104,27 @@ def get_prices(symbol_list, fields):
 
     return df
 
+
+def get_prices_NEW(symbol_list, fields):
+
+    symbol = symbol_list[0]
+    bid, ask = price_scraper.get_bid_ask(symbol)
+    logger.info(f'bid: {bid}, ask: {ask}')
+    df = pandas.DataFrame(columns=['symbol','Bid','Ask'],data=[[symbol, bid, ask]])
+    df.set_index('symbol', inplace=True)
+
+    return df
+
+def get_prices(symbol_list, fields):
+    return get_prices_OLD(symbol_list, fields)
+
+
 def get_current_price(symbol):
     prices = get_prices([symbol], ['Bid', 'Ask'])
     bid_price = prices.loc[symbol, "Bid"]
     ask_price = prices.loc[symbol, "Ask"]
-    return 0.5 * (bid_price + ask_price)
+    #return 0.5 * (bid_price + ask_price)
+    return ask_price
 
 
 #order_id = place_order(account, quantity, symbol, action, order_type)
@@ -128,6 +146,7 @@ def place_order(account, quantity, symbol, action, order_type):
         "order_id": unique_id,
         "timestamp": timestamp,
         "price": get_test_price(),
+        #"price": get_current_price(symbol),
         "trade_id": None 
     }
 

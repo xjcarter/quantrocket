@@ -1,12 +1,16 @@
 import requests
 from bs4 import BeautifulSoup
+from collections import namedtuple
 
+OHLC = namedtuple("OHLC", ["open", "high", "low", "close"])
 
 class PriceSnapper:
-    def __init__(self, symbol, history_limit=3000):
+    def __init__(self, symbol, bar_length=10):
         self.prices = list()
         self.symbol = symbol
-        self.history_limit = history_limit
+        self.bar_length = bar_length
+        self.current_ohlc = None
+        self.counter = 0
 
     def snap_prices(self):
 
@@ -33,26 +37,36 @@ class PriceSnapper:
             bid_quote = soup.find('td', {'data-test': 'BID-value'}).text
             ask_quote = soup.find('td', {'data-test': 'ASK-value'}).text
 
+            
             if all([bid_quote, ask_quote]):
+                self.counter += 1
+
                 bid_price, bid_volume = _strip(bid_quote)
                 ask_price, ask_volume = _strip(ask_quote)
-            else:
-                bid_price = ask_price = None
+                self.prices.extend([bid_price, ask_price])
 
-            mid_price = None
-            if all([bid_price, ask_price]):
-                mid_price= round(0.5*(bid_price+ask_price),2)
-                self.prices.append(mid_price)
-                if len(self.prices) > self.history_limit:
-                    self.prices = self.prices[-self.history_limit:]
-            return bid_price, ask_price, mid_price
+                #self.volume.extend([bid_volume, ask_volume])
+                if self.counter >= self.bar_length:
+                    close_price = round((bid_price + ask_price)*0.5,2)
+                    open_price = round((self.prices[0] + self.prices[1])*0.5,2)
+                    high_price = max(self.prices)
+                    low_price  = min(self.prices)
+                    # Create a named tuple with OHLC values and return it
+                    ohlc = OHLC(open=open_price, high=high_price, low=low_price, close=close_price)
+                    self.current_ohlc = ohlc
+
+                    self.prices = []
+                    self.counter = 0
+                    return ohlc                   
+                else:
+                    return None
 
         except requests.exceptions.RequestException as e:
             print(e)
-            return None, None, None 
+            return None 
         except Exception as e:
             print(f"Error: {e}")
-            return None, None, None 
+            return None 
 
 
 def get_bid_ask(symbol):
