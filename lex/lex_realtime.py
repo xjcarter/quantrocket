@@ -312,7 +312,6 @@ def main(strategy_id, universe):
     global ANCHOR_ADJUST 
 
     ANCHOR_ADJUST = -1.50 
-    """
     OPEN_TIME = "09:30"
     CLOSE_TIME = "15:57"
     EOD_TIME = "16:05"
@@ -320,6 +319,7 @@ def main(strategy_id, universe):
     OPEN_TIME = "19:07"
     CLOSE_TIME = "19:17"
     EOD_TIME = "19:20"
+    """
 
     logger.info(f'starting strategy.')
 

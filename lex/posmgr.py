@@ -50,6 +50,12 @@ class PosNode(object):
         self.price = 0
         self.timestamp = '' 
 
+    def clear(self):
+        self.position = 0
+        self.duration = 0
+        self.price = 0
+        self.timestamp = ''
+
     def to_dict(self):
         m = dict()
         for k, v in self.__dict__.items():
@@ -427,9 +433,9 @@ class PosMgr(object):
                 ## add singular position definition
                 if items == 1:
                     open_node = pos_nodes[0]
-                    ## clear duration for empty position on a new trading day
+                    ## clear past history for empty position on a new trading day
                     if open_node.position == 0:
-                        open_node.duration = 0
+                        open_node.clear()
                     self.positions.append(open_node)
                     open_positions += abs(open_node.position)
                 else:
