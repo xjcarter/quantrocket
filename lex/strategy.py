@@ -11,8 +11,7 @@ class Strategy(object):
 
     def _read_config(self, filename):
         cfg = None
-        fn = f'{filename}/{self.strategy_id}.json'
-        with open(fn, 'r') as file:
+        with open(filename, 'r') as file:
             cfg = json.load(file)
 
         return cfg

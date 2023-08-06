@@ -26,13 +26,11 @@ logger.addHandler(console_handler)
 
 import argparse
 
+ANCHOR_ADJUST = 0
+
 # Connect to QuantRocket
 # Make sure you have a running QuantRocket deployment
 # and have configured the necessary credentials
-
-
-ANCHOR_ADJUST = 0 
-self.cfg['max_hold_period'] = 9
 
 
 class Lex(Strategy):
@@ -307,9 +305,14 @@ class Lex(Strategy):
         global ANCHOR_ADJUST 
 
         ANCHOR_ADJUST = -1.50 
+        """
         OPEN_TIME = "09:30"
         CLOSE_TIME = "15:57"
         EOD_TIME = "16:05"
+        """
+        OPEN_TIME = "17:10"
+        CLOSE_TIME = "17:12"
+        EOD_TIME = "17:15"
 
         logger.info(f'starting strategy.')
 
