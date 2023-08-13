@@ -300,19 +300,14 @@ class Lex(Strategy):
             raise RuntimeError(f"couldn't write intraday data: {filepath}")
 
 
-    def run(self):
+    def run_strategy(self):
 
         global ANCHOR_ADJUST 
 
         ANCHOR_ADJUST = -1.50 
-        """
         OPEN_TIME = "09:30"
         CLOSE_TIME = "15:57"
         EOD_TIME = "16:05"
-        """
-        OPEN_TIME = "17:10"
-        CLOSE_TIME = "17:12"
-        EOD_TIME = "17:15"
 
         logger.info(f'starting strategy.')
 
@@ -413,4 +408,4 @@ if __name__ == "__main__":
     u = parser.parse_args()
 
     lex = Lex(u.strategy_id, u.config)
-    lex.run()
+    lex.run_strategy()
