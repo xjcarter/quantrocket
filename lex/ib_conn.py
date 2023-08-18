@@ -18,12 +18,12 @@ import json
 
 class IBClient(EClient):
 
-    def __init__(self, wWrapper):
+    def __init__(self, wrapper):
     ## Set up with a wWrapper inside
-        EClient.__init__(self, wWrapper)
+        EClient.__init__(self, wrapper)
 
         self._req_id = 0 
-        self.wWrapper = wWrapper
+        self.wrapper = wrapper
 
         ## maps succesives ticker_id request to contract symbol
         ## price_map[contract.symbol] = [req_id1, req_id2, ... latest_req_id]
@@ -61,7 +61,7 @@ class IBClient(EClient):
 
     def last_quote(self, contract):
         try:
-            last_ticker_id = self.price_map(contract.symbol][-1]
+            last_ticker_id = self.price_map(contract.symbol])[-1]
             return self.wWrapper.tick_map[last_ticker_id]
         except:
             err = f'no price information available for {contract.symbol})'
@@ -153,7 +153,7 @@ class IBWrapper(EWrapper):
         }
 
         table_len = len(self.tick_type_map.keys())
-        self.tick_map = collections.defaultdict( dict(self.tick_type_map, [None] * table_len )
+        self.tick_map = collections.defaultdict( dict( zip(self.tick_type_map, [None] * table_len) )
 
 
     def is_msg(self):
@@ -295,51 +295,6 @@ if __name__ == '__main__':
         quantity = value['positions']
         avg_cost = value['avg_cost']
         print(f'Position: {symbol}, qty: {quantity}, avg_cost:{avg_cost}')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
