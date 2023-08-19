@@ -1,16 +1,28 @@
 
 # Below are the import statements 
 
-from ibapi.wWrapper import *
+from ibapi.wrapper import *
 from ibapi.client import *
 from ibapi.contract import *
 from ibapi.order import *
 from threading import Thread
 import queue
-import datetime
+from datetime import datetime
 import time
 import collections
 import json
+
+import logging
+# Create a logger specific to __main__ module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.DEBUG)
+FORMAT = "%(asctime)s: %(levelname)8s [%(module)15s:%(lineno)3d - %(funcName)20s ] %(message)s"
+#FORMAT = "%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s"
+formatter = logging.Formatter(FORMAT, datefmt='%a %Y-%m-%d %H:%M:%S')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 
 ## IBClient does all the call request to the server
@@ -19,27 +31,27 @@ import json
 class IBClient(EClient):
 
     def __init__(self, wrapper):
-    ## Set up with a wWrapper inside
+    ## Set up with a wrapper inside
         EClient.__init__(self, wrapper)
 
         self._req_id = 0 
         self.wrapper = wrapper
 
-        ## maps succesives ticker_id request to contract symbol
+        ## maps succesive ticker_id requests to contract symbol that requested the quote
         ## price_map[contract.symbol] = [req_id1, req_id2, ... latest_req_id]
         ## i.e. holds the time_series of price_request for a specific symbol
-        self.price_map = dict()
+        self.price_map = collections.defaultdict(list())
 
     def next_req_id(self):
         self._req_id += 1
-        wWrapper.nextValidId(self._req_id)
+        wrapper.nextValidId(self._req_id)
         return self._req_id
 
     @property
     def req_id(self):
         return self._req_id
 
-    def create_contract(self, symbol, sec_type='USD', ccy='USD', exch='SMART'):
+    def create_contract(self, symbol, sec_type='STK', ccy='USD', exch='SMART'):
         contract = Contract()  
         contract.symbol = symbol   
         contract.secType = sec_type   
@@ -59,66 +71,71 @@ class IBClient(EClient):
 
         return order   
 
-    def last_quote(self, contract):
-        try:
-            last_ticker_id = self.price_map(contract.symbol])[-1]
-            return self.wWrapper.tick_map[last_ticker_id]
-        except:
-            err = f'no price information available for {contract.symbol})'
-            print(err)
-            raise RuntimeError(err)
-
     def place_order(self, contract, order):
-
-        full_quote = self.last_quote(contract)  #returns  a dicitionary {Last: 123.5, Bid: 123, Ask:123.5, LastSz: 300, BidSz: 1000, AskSz: 200} 
-        fq = json.dumps(full_quote, ensure_ascii=False, indent=4))
-        print(f'last_quote= {fq}')
-
-        # Print statement to confirm correct values 
-        print(f'Buying power: {self.buying_power}')
-        print(f'Available Cash: {self.available_cash}') 
-
         # Place order 
         order_id = self.next_req_id()
-        print(f'submitting order: order_id= {order_id}')
+        logger.info(f'submitting order: order_id= {order_id}')
         _ibx.placeOrder(order_id, contract, order)
-        print("order was placed")
+        logger.info("order was placed")
 
-    def server_clock(self):
 
-        print("Asking server for Unix time")     
+    def last_quote(self, contract):
+        ## returns a dict of quote attributes {'Bid':123, 'Ask':123.5, ... }
+        try:
+            symbol = contract.symbol
+            last_ticker_id = self.price_map[symbol][-1]
+            full_quote = self.wrapper.tick_map[last_ticker_id]
+            ## wait until a full quote
+            while (None not in (full_quote.values()):
+                full_quote = self.wrapper.tick_map[last_ticker_id]
+                time.sleep(0.2)
+            fq = json.dumps(full_quote, ensure_ascii=False, indent=4))
+            logger.info(f'last_quote= {fq}')
+            return full_quote 
+        except:
+            err = f'no price information available for {contract.symbol}'
+            logger.error(err)
+            raise RuntimeError(err)
 
-        # Sets up a request for unix time from the Eclient
+
+    def ping_server(self):
+
+        logger.info("Asking server for Unix time")     
+
         self.reqCurrentTime()
 
         #Specifies a max wait time if there is no connection
         max_wait_time = 10
 
         try:
-            requested_time = ib_server_time.get(timeout = max_wait_time)
+            begin = datetime.now()
+            requested_time = self.wrapper.ib_server_time.get(timeout = max_wait_time)
+            end = datetime.now()a
+            logger.info(f'current server time: {requested_time}')
+            dur = end - begin
+            logger.info(f'response time: {dur.total_seconds()} seconds')
         except queue.Empty:
-            print("The queue was empty or max time reached")
+            logger.error("response was empty or max time reached")
             requested_time = None
 
-        while self.wWrapper.is_msg():
-          print("Error:")
-          print(self.get_msg(timeout=5))
+        while self.wrapper.has_msg():
+          logger.info(self.get_msg(timeout=5))
           
-        return requested_time
 
     def account_update(self):
+        self.wrapper.response_check['accountSummary'] = datetime.now()
         self.reqAccountSummary(self.next_req_id(), "All", "TotalCashValue, BuyingPower, AvailableFunds")
 
     def position_update(self):
+        self.wrapper.response_check['position'] = datetime.now()
         self.reqPositions()
 
     def snap_prices(self, contract):
         ticker_id = self.next_req_id()
-        self.reqMktData(tickerid, contract, "", False, False, [])
-        try:
-            self.price_map[contract.symbol]._ibxend(ticker_id)
-        except:
-            self.price_map[contract.symbol] = [ticker_id]
+        self.reqMktData(ticker_id, contract, "", False, False, [])
+
+        ## defaultdict!  creates a new list on a new key.
+        self.price_map[contract.symbol].append(ticker_id)
 
 
 
@@ -133,12 +150,15 @@ class IBWrapper(EWrapper):
         ## set up msg queue to receive system message 
         self.msg_queue = queue.Queue()
         self.ib_server_time = queue.Queue()
-        self.available_funds = 0
-        self.buying_power = 0
         self.positions_map = dict()
+        self.account_info = dict()
+       
+        ## monitors the response duration
+        ## btwn client call and callback response
+        self.response_check = dict()
 
         ## maps each price request by ticker_id
-        self.tick_type_map = {  0: 'BidSz',
+        self.tick_field_map = {  0: 'BidSz',
                                 1: 'Bid',
                                 2: 'Ask',
                                 3: 'AskSz',
@@ -149,19 +169,22 @@ class IBWrapper(EWrapper):
                                 8: 'Volume',
                                 9: 'Close',
                                 14: 'Open',
-                                45: 'ReqTS'
+                                45: 'Server_TS'
         }
 
-        table_len = len(self.tick_type_map.keys())
-        self.tick_map = collections.defaultdict( dict( zip(self.tick_type_map, [None] * table_len) )
+        _default_quote_map = lambda: dict( zip(self.tick_field_map.values(), [None] * len(self.tick_field_map)) )
 
+        self.tick_map =  collections.defaultdict(_default_quote_map)
 
-    def is_msg(self):
+    def _timestamp(self):
+        return datetime.now().strftime("%Y%m%d-%H:%M:%S")
+
+    def has_msg(self):
         msg_exist = not self.msg_queue.empty()
         return msg_exist
 
     def get_msg(self, timeout=6):
-        if self.is_msg():
+        if self.has_msg():
             try:
                 return self.msg_queue.get(timeout=timeout)
             except queue.Empty:
@@ -171,7 +194,7 @@ class IBWrapper(EWrapper):
     def error(self, id, errorCode, errorString):
         ## Overrides the native method
         message = f'IB Message code= {errorCode}: errorString'
-        self.msg_queue.put(errormessage)
+        self.msg_queue.put(message)
 
     def currentTime(self, server_time):
         ## Overriden method
@@ -184,36 +207,50 @@ class IBWrapper(EWrapper):
     # Account details handling methods
     def accountSummary(self, req_id, account, tag, value, currency):
         super().accountSummary(req_id, account, tag, value, currency)
+        try:
+            ## track response time of callback
+            tag = 'accountSummary'
+            dur = datetime.now() - self.response_check[tag]
+            logger.info(f'{tag} callback response: {dur.total_seconds()}') 
+        except:
+            pass
+
         details = f'Acct Summary. req_Id {req_id}: account: {account}, tag: {tag}, '
         details += f'value: {value} currency: {currency)'
-        print(details)
+        logger.info(details)
 
-        if tag == "AvailableFunds":
-            self.available_funds = value
-        if tag == "BuyingPower":
-            self.buying_power = value
+        self.account_info[tag] = value
+
 
     def accountSummaryEnd(self, req_id: int):
         super().accountSummaryEnd(req_id)
-        print(f'AccountSummaryEnd. req_id: {req_id}')
+        logger.info(f'AccountSummaryEnd. req_id: {req_id}')
 
     # Position handling methods
-    def position(self, account, contract, position, avg_cost: float):
+    def position(self, account, contract, position, avg_cost):
         super().position(account, contract, position, avg_cost)
+        super().accountSummary(req_id, account, tag, value, currency)
+        try:
+            tag = 'position'
+            dur = datetime.now() - self.response_check[tag]
+            logger.info(f'{tag} callback response: {dur.total_seconds()}') 
+        except:
+            pass
 
-        self.positions_map[contract.symbol] = {'positions' : position, 'avg_cost' : avg_cost}
+        self.positions_map[contract.symbol] = {'position': position, 'avg_cost': avg_cost}
 
 
-    def _map_quote_value(self, ticker_id, value):
-        quote_dict = self.tick_map.get(ticker_id)
-        ## new ticker_id returns an empty dict
-        ## otherwise it returns gthe partially filled dict
+    def _map_quote_value(self, ticker_id, tick_type, value):
 
-        field = self.tick_type_map[ tick_type ]
-        quote_dict[ field ] = value 
-
-        self.tick_map[ticker_id] = quote_dict 
-
+        ## awesome defaultdict functionality to write fields as they come in!
+        ## defaultdict is threadsafe and creates new quote_dict (see __init__)
+        ## when in encounters a new key!
+        field = self.tick_field_map.get(tick_type, None)
+        if field is not None:
+            self.tick_map[ticker_id][ field ] = value
+            ## this will be updated until the quote dict is completed
+            ## give as good marker of 'fill time' btwn Server_TS and Client_TS
+            self.tick_map[ticker_id]['Client_TS'] = self._timestamp()
 
     # Market Price handling methods
     def tickPrice(self, ticker_id, tick_type, price, attrib):
@@ -243,15 +280,14 @@ class IBConnection(IBWrapper, IBClient):
     #Intializes our main classes 
     def __init__(self, ipaddress, portid, clientid):
         IBWrapper.__init__(self)
-        IBClient.__init__(self, wWrapper=self)
+        IBClient.__init__(self, wrapper=self)
 
         #Connects to the server with the ipaddress, portid, and clientId specified in the program execution area
         self.connect(ipaddress, portid, clientid)
 
         #Initializes the threading
-        thread = Thread(target = self.run)
-        thread.start()
-        setattr(self, "_thread", thread)
+        self._thread = Thread(target = self.run)
+        self._thread.start()
 
 
 
@@ -259,21 +295,16 @@ class IBConnection(IBWrapper, IBClient):
 
 if __name__ == '__main__':
 
-    print("before start")
+    logger.info("before start")
 
     # Specifies that we are on local host with port 7497 (paper trading port number)
     _ibx = IBConnection("127.0.0.1", 7497, 0)     
 
     # A printout to show the program began
-    print("The program has begun")
+    logger.info("The program has begun")
 
-    #assigning the return from our clock method to a variable 
-    requested_time = _ibx.server_clock()
+    _ibx.ping_server()
 
-    #printing the return from the server
-    print("")
-    print("This is the current time from the server " )
-    print(requested_time)
 
     #disconnect the _ibx when we are done with this one execution
     # _ibx.disconnect()
@@ -288,13 +319,13 @@ if __name__ == '__main__':
     ## FIX THIS - huh?
     _ibx.place_order()
 
-    print(positions_map)
+    logger.info(_ibx.positions_map)
      
     for key, value in positions_map.items(): 
         symbol = key
         quantity = value['positions']
         avg_cost = value['avg_cost']
-        print(f'Position: {symbol}, qty: {quantity}, avg_cost:{avg_cost}')
+        logger.info(f'Position: {symbol}, qty: {quantity}, avg_cost:{avg_cost}')
 
 
 
