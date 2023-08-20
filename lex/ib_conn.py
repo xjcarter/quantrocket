@@ -25,120 +25,6 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 
-## IBClient does all the call request to the server
-## i.e. place orders , request buying power, available cash, get price data
-
-class IBClient(EClient):
-
-    def __init__(self, wrapper):
-    ## Set up with a wrapper inside
-        EClient.__init__(self, wrapper)
-
-        self._req_id = 0 
-        self.wrapper = wrapper
-
-        ## maps succesive ticker_id requests to contract symbol that requested the quote
-        ## price_map[contract.symbol] = [req_id1, req_id2, ... latest_req_id]
-        ## i.e. holds the time_series of price_request for a specific symbol
-        self.price_map = collections.defaultdict(list())
-
-    def next_req_id(self):
-        self._req_id += 1
-        wrapper.nextValidId(self._req_id)
-        return self._req_id
-
-    @property
-    def req_id(self):
-        return self._req_id
-
-    def create_contract(self, symbol, sec_type='STK', ccy='USD', exch='SMART'):
-        contract = Contract()  
-        contract.symbol = symbol   
-        contract.secType = sec_type   
-        contract.currency = ccy 
-
-        # In the API side, NASDAQ is always defined as ISLAND in the exchange field
-        contract.exchange = exch 
-        # contract.PrimaryExch = "NYSE"
-        return contract  
-
-    def create_mkt_order(self, side, qty):
-        order = Order()    
-        order.action = side.value   ## TradeSide enum   
-        order.orderType = "MKT" 
-        order.transmit = True      ## used in conbo orders, default to True
-        order.totalQuantity = qty 
-
-        return order   
-
-    def place_order(self, contract, order):
-        # Place order 
-        order_id = self.next_req_id()
-        logger.info(f'submitting order: order_id= {order_id}')
-        _ibx.placeOrder(order_id, contract, order)
-        logger.info("order was placed")
-
-
-    def last_quote(self, contract):
-        ## returns a dict of quote attributes {'Bid':123, 'Ask':123.5, ... }
-        try:
-            symbol = contract.symbol
-            last_ticker_id = self.price_map[symbol][-1]
-            full_quote = self.wrapper.tick_map[last_ticker_id]
-            ## wait until a full quote
-            while (None not in (full_quote.values()):
-                full_quote = self.wrapper.tick_map[last_ticker_id]
-                time.sleep(0.2)
-            fq = json.dumps(full_quote, ensure_ascii=False, indent=4))
-            logger.info(f'last_quote= {fq}')
-            return full_quote 
-        except:
-            err = f'no price information available for {contract.symbol}'
-            logger.error(err)
-            raise RuntimeError(err)
-
-
-    def ping_server(self):
-
-        logger.info("Asking server for Unix time")     
-
-        self.reqCurrentTime()
-
-        #Specifies a max wait time if there is no connection
-        max_wait_time = 10
-
-        try:
-            begin = datetime.now()
-            requested_time = self.wrapper.ib_server_time.get(timeout = max_wait_time)
-            end = datetime.now()a
-            logger.info(f'current server time: {requested_time}')
-            dur = end - begin
-            logger.info(f'response time: {dur.total_seconds()} seconds')
-        except queue.Empty:
-            logger.error("response was empty or max time reached")
-            requested_time = None
-
-        while self.wrapper.has_msg():
-          logger.info(self.get_msg(timeout=5))
-          
-
-    def account_update(self):
-        self.wrapper.response_check['accountSummary'] = datetime.now()
-        self.reqAccountSummary(self.next_req_id(), "All", "TotalCashValue, BuyingPower, AvailableFunds")
-
-    def position_update(self):
-        self.wrapper.response_check['position'] = datetime.now()
-        self.reqPositions()
-
-    def snap_prices(self, contract):
-        ticker_id = self.next_req_id()
-        self.reqMktData(ticker_id, contract, "", False, False, [])
-
-        ## defaultdict!  creates a new list on a new key.
-        self.price_map[contract.symbol].append(ticker_id)
-
-
-
 ## IBWrapper is the class that receives requested data from the server.
 ## via callbacks (that need to be overriden to save captured data 
 
@@ -176,6 +62,10 @@ class IBWrapper(EWrapper):
 
         self.tick_map =  collections.defaultdict(_default_quote_map)
 
+    # ID handling methods
+    def nextValidId(self, next_id):
+        super.nextValidId(next_id)
+
     def _timestamp(self):
         return datetime.now().strftime("%Y%m%d-%H:%M:%S")
 
@@ -200,9 +90,6 @@ class IBWrapper(EWrapper):
         ## Overriden method
         self.ib_server_time.put(server_time)
 
-    # ID handling methods
-    def nextValidId(self, next_id):
-        super.nextValidId(next_id)
 
     # Account details handling methods
     def accountSummary(self, req_id, account, tag, value, currency):
@@ -211,12 +98,12 @@ class IBWrapper(EWrapper):
             ## track response time of callback
             tag = 'accountSummary'
             dur = datetime.now() - self.response_check[tag]
-            logger.info(f'{tag} callback response: {dur.total_seconds()}') 
+            logger.debug(f'{tag} callback response: {dur.total_seconds()}') 
         except:
             pass
 
-        details = f'Acct Summary. req_Id {req_id}: account: {account}, tag: {tag}, '
-        details += f'value: {value} currency: {currency)'
+        details = f'Acct Summary. req_Id {req_id}: account: {account}, tag: {tag},'
+        details += f' value: {value} currency: {currency)'
         logger.info(details)
 
         self.account_info[tag] = value
@@ -233,11 +120,13 @@ class IBWrapper(EWrapper):
         try:
             tag = 'position'
             dur = datetime.now() - self.response_check[tag]
-            logger.info(f'{tag} callback response: {dur.total_seconds()}') 
+            logger.debug(f'{tag} callback response: {dur.total_seconds()}') 
         except:
             pass
 
         self.positions_map[contract.symbol] = {'position': position, 'avg_cost': avg_cost}
+        pp = json.dumps(self.positions_map, ensure_ascii=False, indent=4)
+        logger.info('IB positions: {pp}')
 
 
     def _map_quote_value(self, ticker_id, tick_type, value):
@@ -274,6 +163,127 @@ class IBWrapper(EWrapper):
         self._map_quote_value(ticker_id, tick_type, value)
 
 
+## IBClient does all the call request to the server
+## i.e. place orders , request buying power, available cash, get price data
+
+class IBClient(EClient):
+
+    def __init__(self, wrapper):
+    ## Set up with a wrapper inside
+        EClient.__init__(self, wrapper)
+
+        self._req_id = 0 
+        self.wrapper = wrapper
+
+        ## maps succesive ticker_id requests to contract symbol that requested the quote
+        ## price_map[contract.symbol] = [req_id1, req_id2, ... latest_req_id]
+        ## i.e. holds the time_series of price_request for a specific symbol
+        self.price_map = collections.defaultdict(list())
+
+    def next_req_id(self):
+        self._req_id += 1
+        self.wrapper.nextValidId(self._req_id)
+        return self._req_id
+
+    @property
+    def req_id(self):
+        return self._req_id
+
+    def create_contract(self, symbol, sec_type='STK', ccy='USD', exch='SMART'):
+        contract = Contract()  
+        contract.symbol = symbol   
+        contract.secType = sec_type   
+        contract.currency = ccy 
+
+        # In the API side, NASDAQ is always defined as ISLAND in the exchange field
+        contract.exchange = exch 
+        # contract.PrimaryExch = "NYSE"
+        return contract  
+
+    def mkt_order(self, side, qty):
+        order = Order()    
+        order.action = side.value   ## TradeSide enum   
+        order.orderType = "MKT" 
+        order.transmit = True      ## used in conbo orders, default to True
+        order.totalQuantity = qty 
+
+        return order   
+
+    def place_order(self, contract, order):
+        # Place order 
+        order_id = self.next_req_id()
+        logger.info(f'submitting order: order_id= {order_id}')
+        ibx.placeOrder(order_id, contract, order)
+
+        deets = dict(contract.__dict__)
+        deets.update(order.__dict__)
+        dd = json.dumps(deets, ensure_ascii=False, indent=4)
+        logger.info("order ({order_id}) placed: {dd}")
+
+        return order_id
+
+
+    def last_quote(self, contract):
+        ## returns a dict of quote attributes {'Bid':123, 'Ask':123.5, ... }
+        try:
+            symbol = contract.symbol
+            last_ticker_id = self.price_map[symbol][-1]
+            full_quote = self.wrapper.tick_map[last_ticker_id]
+            ## wait until a full quote
+            while None not in full_quote.values():
+                full_quote = self.wrapper.tick_map[last_ticker_id]
+                time.sleep(0.2)
+            fq = json.dumps(full_quote, ensure_ascii=False, indent=4)
+            logger.info(f'last_quote= {fq}')
+            return full_quote 
+        except:
+            err = f'no price information available for {contract.symbol}'
+            logger.error(err)
+            raise RuntimeError(err)
+
+    def snap_prices(self, contract):
+        ticker_id = self.next_req_id()
+        self.reqMktData(ticker_id, contract, "", False, False, [])
+
+        ## defaultdict!  creates a new list on a new key.
+        self.price_map[contract.symbol].append(ticker_id)
+
+
+
+    def ping_server(self):
+
+        logger.info("Asking server for Unix time")     
+
+        self.reqCurrentTime()
+
+        #Specifies a max wait time if there is no connection
+        max_wait_time = 10
+
+        try:
+            begin = datetime.now()
+            requested_time = self.wrapper.ib_server_time.get(timeout = max_wait_time)
+            end = datetime.now()
+            logger.info(f'current server time: {requested_time}')
+            dur = end - begin
+            logger.info(f'response time: {dur.total_seconds()} seconds')
+        except queue.Empty:
+            logger.error("response was empty or max time reached")
+            requested_time = None
+
+        while self.wrapper.has_msg():
+          logger.info(self.get_msg(timeout=5))
+          
+
+    def account_update(self):
+        logger.info('requested account update')
+        self.wrapper.response_check['accountSummary'] = datetime.now()
+        self.reqAccountSummary(self.next_req_id(), "All", "TotalCashValue, BuyingPower, AvailableFunds")
+
+    def position_update(self):
+        logger.info('requested position update')
+        self.wrapper.response_check['position'] = datetime.now()
+        self.reqPositions()
+
 
 
 class IBConnection(IBWrapper, IBClient):
@@ -291,41 +301,32 @@ class IBConnection(IBWrapper, IBClient):
 
 
 
-# Below is the program execution
-
 if __name__ == '__main__':
 
-    logger.info("before start")
+    logger.info("Connecting to IB")
 
     # Specifies that we are on local host with port 7497 (paper trading port number)
-    _ibx = IBConnection("127.0.0.1", 7497, 0)     
+    ibx = IBConnection("127.0.0.1", 7497, 0)     
 
-    # A printout to show the program began
-    logger.info("The program has begun")
+    ibx.ping_server()
 
-    _ibx.ping_server()
-
-
-    #disconnect the _ibx when we are done with this one execution
-    # _ibx.disconnect()
-
-
-    _ibx.account_update()    # Call this whenever you need to start accounting data
-    _ibx.position_update()   # Call for current position
-    # _ibx.price_update() 
+    ibx.account_update()    # Call this whenever you need to start accounting data
+    ibx.position_update()   # Call for current position
+    # ibx.price_update() 
 
     time.sleep(3)   # Wait three seconds to gather initial information 
 
-    ## FIX THIS - huh?
-    _ibx.place_order()
+    aapl = ibx.create_contract('AAPL')
+    ibx.place_order(aapl, mkt_order(TradeSide.BUY, 100)
 
-    logger.info(_ibx.positions_map)
-     
-    for key, value in positions_map.items(): 
-        symbol = key
-        quantity = value['positions']
-        avg_cost = value['avg_cost']
-        logger.info(f'Position: {symbol}, qty: {quantity}, avg_cost:{avg_cost}')
+    ibx.snap_prices(aapl)
 
+    time.sleep(3)
+    
+    ibx.last_quote(aapl)
+    ibx.position_update()   # Call for current position
 
+    time.sleep(3)
 
+    #disconnect the ibx when we are done with this one execution
+    # ibx.disconnect()
