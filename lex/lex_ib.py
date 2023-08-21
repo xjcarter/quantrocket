@@ -10,7 +10,7 @@ import calendar_calcs
 from indicators import MondayAnchor, StDev
 import os, sys, json
 import uuid
-from price_scraper import PriceSnapper
+from ib_conn import IBConnection
 
 import logging
 # Create a logger specific to __main__ module
@@ -40,6 +40,7 @@ class Lex(Strategy):
         self._ibx = IBConnection()
         self.pos_mgr = PosMgr()
         self.intra_prices = list()
+
 
     def load_historical_data(self, symbol):
 
@@ -107,8 +108,10 @@ class Lex(Strategy):
     def get_bid_ask(self, symbol, show_volume=False):
 
         try:
-            last_print = self.intra_prices[-1]
-            bid, ask, bid_size, ask_size = last_print
+            contract = self._ibx.create_contract(symbol)
+            last_print = self._ibx.last_quote(contract)
+            bid, ask = last_print['Bid'], last_print['Ask']
+            bid_size, ask_size = last_print['BidSz'], last_print['AskSz']
             if show_volume:
                 logger.info(f'current bid/ask for {symbol}: bid:{bid_price} ({bid_size}), ask:{ask_price} ({ask_size})')
                 return bid, ask, bid_size, ask_size
@@ -122,18 +125,15 @@ class Lex(Strategy):
 
 
     def fetch_prices(self, symbol):
-        dt_tm = datetime.now().strftime("%Y%m%d %H:%M:%S").split()
-        ## bundle = [ bid, ask, bid_size, ask_size ]
-        bundle = self._ibx.snap_prices(symbol)
-        self.intra_prices.append(dt_tm.extend(bundle))
-
+        contract = self._ibx.create_contract(symbol)
+        self._ibx.snap_prices(contract)
 
     def check_exit(self, position_node, stdv):
 
         current_pos, entry_price = position_node.position, position_node.price
         duration = position_node.duration
 
-        _bid, current_price = self.get_bid_ask(position_node.name)
+        current_price, _ask, _bidsz, _asksz = self.get_bid_ask(position_node.name, show_volume=True)
 
         get_out = False
         alert = 'NO_EXIT'
@@ -154,48 +154,23 @@ class Lex(Strategy):
         return get_out, current_pos
         
 
-    ## creates and submits order
-    ## order_notes is a field to hold any info that many help in auditting trades
     def create_order(self, side, symbol, amount, order_type=OrderType.MKT, order_notes=None):
 
-        def _new_order_id(tag=None):
-            # Generate a unique order ID with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            unique_id = str(uuid.uuid4())
-            if tag is not None:
-                return f"{tag}-{unique_id}-{timestamp}"
-            else:
-                return f"{unique_id}-{timestamp}"
-
-        # Create a market order to buy 100 shares of SPY
-
-        order = {
-            "account": self.cfg['ib_account'],
-            "quantity": amount,
-            "symbol": symbol,
-            "action": side.value,
-            "order_type": order_type.value
-        }
+        order = self._ibx.mkt_order(side.value, amount)
+        contract = self._ibx.create_contract(symbol)
 
         logger.info('sending order.')
 
-        # Place the order
+        order_id = self._ibx.place_order(contract, order)
 
-        #legacy submission
-        #ib_order_id = _new_order_id(self.strategy_id) 
-        #ticket = OrderStatuses.submit_order(order, ib_order_id)
-
-        #order_id = place_order(account, symbol, quantity, action, order_type)
-        #order_id = place_order(**order)
-        order_id = TESTER.place_order(**order)
         logger.info(f'order_id: {order_id} submitted.')
 
         order_info = {
             'order_id': order_id,
-            'symbol': order['symbol'],
-            'quantity': order['quantity'],
-            'side': order['action'],
-            'order_type': order['order_type'],
+            'symbol': symbol,
+            'quantity': amount,
+            'side': side.value,
+            'order_type': order_type,
             'info': order_notes
         }
         logger.info(json.dumps(order_info, ensure_ascii=False, indent =4 ))
@@ -216,33 +191,20 @@ class Lex(Strategy):
 
         ## handle fills and post all files through PosMgr object
 
-        """
-        Here are some common fields that you may typically find in the executions DataFrame:
-
-        OrderRef: The reference or ID of the order associated with the execution.
-        Symbol: The symbol or ticker of the instrument being traded.
-        Exchange: The exchange where the execution occurred.
-        Quantity: The quantity of the executed order.
-        Side: The side of the executed order (Buy or Sell).
-        Price: The execution price.
-        Currency: The currency of the traded instrument.
-        ExecutionTime: The timestamp of the execution.
-        Account: The account associated with the execution.
-        Strategy: The strategy or algorithm associated with the execution.
-
-        FIX THIS: you have to adjust _convert_quantrocket_fill 
-        """
-
         def _get_side(fill):
-            sides = { 'BUY': TradeSide.BUY, 'SELL': TradeSide.SELL }
-            v = fill.get('side', fill.get('action'))
+            sides = { 'BOT': TradeSide.BUY,
+                      'BUY': TradeSide.BUY, 
+                      'SLD': TradeSide.SELL,
+                      'SELL': TradeSide SELL
+            }
+            v = fill.get('side', None)
             if v is not None:
-                return sides[v]
+                return sides[v.upper()]
             else:
                 raise RuntimeError(f'no BUY/SELL action indicated in order!\n order: {order}')
 
         ## map quantrocket order fill
-        def _convert_quantrocket_fill(fill):
+        def _convert_ib_fill(fill):
             trd = Trade( fill['trade_id'] )
             trd.asset = fill["symbol"]
             trd.order_id = fill['order_id']
@@ -258,30 +220,47 @@ class Lex(Strategy):
 
             return trd
 
-
         logger.info('checking for fills.')
 
-        #filled_orders = download_executions()
-        start_date = end_date = datetime.today().date()
-        filled_orders = TESTER.download_executions(start_date, end_date, accounts=[self.cfg['ib_account']])
-
-        for fill in filled_orders:
+        while self.ibx.has_fill():
+            fill = self.ibx.get_fill()
             logger.info(f'Processing trade_id: {fill["trade_id"]}')
-            self.pos_mgr.update_trades( fill, conversion_func=_convert_quantrocket_fill )
+            self.pos_mgr.update_trades( fill, conversion_func=_convert_ib_fill )
+
 
     def create_directory(self, directory_path):
         if not os.path.exists(directory_path):
             os.makedirs(directory_path)
 
-    def dump_intraday_prices(self, data, filepath):
-        df = pandas.DataFrame(columns=['Date','Time','Bid','Ask','BidSize','AskSize'], data=data)
+    def dump_intraday_prices(self, symbol, filepath):
         try:
-            df.set_index('Date',inplace=True)
-            df.to_csv(filepath)
+            contract = self._ibx.create_contract(symbol)
+            df = self._ibx.captured_price_series(contract)
+            df.to_csv(filepath, index=False)
         except:
             logger.error(f"couldn't write intraday data: {filepath}")
             raise RuntimeError(f"couldn't write intraday data: {filepath}")
 
+    def reconcile_capital(self):
+        trade_capital = self.pos_mgr.trade_capital
+        available_cash = self._ibx.account_info['AvailableCash']
+        logger.info(f'reconciling funds bwtn IB and Lex: IB Cash= {available_cash}, Lex Cash= {trade_capital}')
+        trade_capital = min(available_cash, trade_capital)
+        logger.info(f'using trade_capital = {trade_capital}')
+        return trade_capital
+
+    def reconcile_positions(self, symbol):
+        ib_position = self._ibx.positions_map[symbol]['position']
+        ib_avgp = self._ibx.positions_map[symbol]['avg_cost']
+        pos_node = self.pos_mgr.get_position(symbol)
+        lex_position, lex_avgp = pos_node.position, pos_node.price
+        logger.info(f'reconciling positions: ')
+        logger.info(f'IB: {ib_position} @ {ib_avgp:.4f}, Lex: {lex_position} @ {lex_avgp:.4f}')
+        if ib_avgp != lex_avgp:
+            logger.critical('IB and Lex avg_costs do not match!')
+        if ib_position != lex_position:
+            logger.critical('IB and Lex positions do not match!')
+            raise RuntimeError
 
     def run_strategy(self):
 
@@ -314,7 +293,14 @@ class Lex(Strategy):
         fire_entry, stdv = self.calc_metrics(data)
         logger.info(f'trading metrics calculated.')
 
-        logger.info(f'trading loop initiated.')
+        logger.info('fetch account/position information from IB')
+        self._ibx.account_update()
+        self._ibx.position_update()
+
+        time.sleep(5)
+
+        self.reconcile_positions()
+        trade_capital = self.reconcile_capital()
 
         PRE_OPEN_TIME = "09:27"
         OPEN_TIME = "09:30"
@@ -327,7 +313,7 @@ class Lex(Strategy):
         at_end_of_day = TripWire(time_from_str(EOD_TIME))
         fetch_intra_prices = TripWire(time_from_str(PRE_OPEN_TIME), interval_reset=5, stop_at=time_from_str(EOD_TIME))  
 
-
+        logger.info(f'starting trading loop.')
 
         while True:
            
@@ -339,15 +325,14 @@ class Lex(Strategy):
 
             with at_open as opening:
                 if opening:
-
                     if current_pos == 0:
-                        trade_amt = self.calc_trade_amount(symbol, self.pos_mgr.trade_capital)
+                        trade_amt = self.calc_trade_amount(symbol, trade_capital)
                         if fire_entry and trade_amt > 0:
                             logger.info(f'entry triggered.')
 
-                            open_price, _ask = self.get_bid_ask(position_node.name)
+                            _bid, open_price, _bidsz, _asksz = self.get_bid_ask(position_node.name, show_volume=True)
 
-                            logger.info(f'opening price: {open_price}')
+                            logger.info(f'opening ask price: {open_price}')
                             order_info = self.create_order(TradeSide.BUY, symbol, trade_amt, order_notes=self.strategy_id)
                             self.pos_mgr.register_order(order_info)
                         elif fire_entry:
@@ -355,10 +340,10 @@ class Lex(Strategy):
                     else:
                         logger.info(f'no trade: working open position: {symbol} {current_pos}')
 
+            self.check_for_fills()
 
             with at_close as closing:
                 if closing:
-
                     position_node = self.pos_mgr.get_position(symbol)
                     fire_exit, current_pos = self.check_exit(position_node, stdv)
                     logger.info(f'{symbol} {current_pos}, fire_exit = {fire_exit}')
@@ -366,15 +351,13 @@ class Lex(Strategy):
                         order_info = self.create_order(TradeSide.SELL, symbol, current_pos, order_notes=self.strategy_id)
                         self.pos_mgr.register_order(order_info)
 
-            self.check_for_fills()
-
             with at_end_of_day as end_of_day:
                 if end_of_day:
                     today = datetime.today().strftime("%Y%m%d")
                     self.create_directory(f'{self.cfg["intraday_prices_dir"]}/{self.strategy_id}/')
                     intra_file = f'{self.cfg["intraday_prices_dir"]}/{self.strategy_id}/{symbol}.{today}.csv'
                     logger.info('saving intraday prices ...')
-                    self.dump_intraday_prices(self.intra_prices, intra_file) 
+                    self.dump_intraday_prices(symbol, intra_file) 
                     logger.info('updating position durations ...')
                     self.pos_mgr.update_durations()
                     logger.info('end of day completed.')

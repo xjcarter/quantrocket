@@ -35,6 +35,7 @@ class IBWrapper(EWrapper):
 
         ## set up msg queue to receive system message 
         self.msg_queue = queue.Queue()
+        self.order_executions = queue.Queue()
         self.ib_server_time = queue.Queue()
         self.positions_map = dict()
         self.account_info = dict()
@@ -70,8 +71,8 @@ class IBWrapper(EWrapper):
         return datetime.now().strftime("%Y%m%d-%H:%M:%S")
 
     def has_msg(self):
-        msg_exist = not self.msg_queue.empty()
-        return msg_exist
+        msg_exists = not self.msg_queue.empty()
+        return msg_exists
 
     def get_msg(self, timeout=6):
         if self.has_msg():
@@ -81,9 +82,15 @@ class IBWrapper(EWrapper):
                 return None
         return None
 
-    def error(self, id, errorCode, errorString):
+    def error(self, error_id, error_code, error_string):
+        super().error(error_id, error_code, error_string)
         ## Overrides the native method
-        message = f'IB Message code= {errorCode}: errorString'
+        message = f'IB Message code= {error_code}: error_string'
+        self.msg_queue.put(message)
+
+    def updateNewsBulletin(self, msg_id, msg_type, news_message):
+        super().updateNewsBulletin(self, msg_id, msg_type, news_message)
+        message = f'IB News Bulletin msg_type= {msg_type}: news_message'
         self.msg_queue.put(message)
 
     def currentTime(self, server_time):
@@ -128,6 +135,45 @@ class IBWrapper(EWrapper):
         pp = json.dumps(self.positions_map, ensure_ascii=False, indent=4)
         logger.info('IB positions: {pp}')
 
+    def orderStatus(self, order_id, status, filled, remaining, avg_fill_price, 
+                          perm_id, parent_id, last_fill_price, client_id, why_held, mkt_cap_price )
+        ## see pg 413 for filed descripitions
+        super().orderStatus(order_id, status, filled, remaining, avg_fill_price, 
+                          perm_id, parent_id, last_fill_price, client_id, why_held, mkt_cap_price )
+        ## FIX THIS
+        pass
+         
+
+    def execDetails(self, order_id, contract, execution):
+        super().execDetails(order_id, contract, execution)
+        self.order_executions.put((order_id, contract, execution))
+       
+    def has_fill(self):
+        fill_exists = not self.order_executions.empty()
+        return fill_exists
+
+    def get_fill(self, timeout=6):
+
+        def _convert_fill(order_id, contract, execution);
+            fill = dict()
+            fill['trade_id'] = execution.execId
+            fill['order_id'] = order_id
+            fill['symbol'] = contract.symbol
+            fill['side'] = execution.side
+            fill['quantity'] = execution.shares
+            fill['price'] = execution.price
+            fill['timestamp'] = execution.time
+            fill['exchange'] = execution.exchange
+            return fill 
+
+        if self.has_fill():
+            try:
+                fill_details = self.order_executions.get(timeout=timeout)
+                fill = _convert_fill( *fill_details )
+            except queue.Empty:
+                return None
+        return None
+
 
     def _map_quote_value(self, ticker_id, tick_type, value):
 
@@ -147,7 +193,10 @@ class IBWrapper(EWrapper):
         ## PRICE Callbadk: IDs 1,2,4,6,7,9,14 
         ## by default, all these values are set to None
         ## tick_type_keys = [Last, Bid, Ask, Open, High, Low, Close]
-        self._map_quote_value(ticker_id, tick_type, price)
+        if price > 0:
+            self._map_quote_value(ticker_id, tick_type, price)
+        else:
+            logger.critical('no prices available for ticker_id= {ticker_id}')
 
     def tickSize(self, ticker_id, tick_type, size):
         super().tickSize(ticker_id, tick_type, size)
@@ -202,7 +251,7 @@ class IBClient(EClient):
 
     def mkt_order(self, side, qty):
         order = Order()    
-        order.action = side.value   ## TradeSide enum   
+        order.action = side   
         order.orderType = "MKT" 
         order.transmit = True      ## used in conbo orders, default to True
         order.totalQuantity = qty 
@@ -229,10 +278,21 @@ class IBClient(EClient):
             symbol = contract.symbol
             last_ticker_id = self.price_map[symbol][-1]
             full_quote = self.wrapper.tick_map[last_ticker_id]
+
             ## wait until a full quote
-            while None not in full_quote.values():
+            counter = 50
+            while None in full_quote.values():
                 full_quote = self.wrapper.tick_map[last_ticker_id]
+                counter -= 1
+                if counter <= 0:
+                    err= 'incomplete quote for {symbol}, ticker_id = {last_ticker_id}'
+                    logger.error(err)
+                    fq = json.dumps(full_quote, ensure_ascii=False, indent=4)
+                    logger.error(f'last_quote= {fq}')
+                    raise RuntimeError(err)
+
                 time.sleep(0.2)
+               
             fq = json.dumps(full_quote, ensure_ascii=False, indent=4)
             logger.info(f'last_quote= {fq}')
             return full_quote 
@@ -243,11 +303,20 @@ class IBClient(EClient):
 
     def snap_prices(self, contract):
         ticker_id = self.next_req_id()
-        self.reqMktData(ticker_id, contract, "", False, False, [])
+        ## request single price snapshot
+        self.reqMktData(ticker_id, contract, "", True, False, [])
 
         ## defaultdict!  creates a new list on a new key.
         self.price_map[contract.symbol].append(ticker_id)
 
+
+    ## returns a dataframe of total captured price series
+    def captured_price_series(self, contract):
+        symbol = contract.symbol
+        quote_list = list()
+        for ticker_id in self.price_map[symbol]:
+            quote_list.append(self.wrapper.tick_map[ticker_id])
+        return pandas.DataFrame(quote_list)
 
 
     def ping_server(self):
@@ -324,7 +393,11 @@ if __name__ == '__main__':
     time.sleep(3)
     
     ibx.last_quote(aapl)
-    ibx.position_update()   # Call for current position
+
+    while ibx.has_fill():
+        fill_dict = ibx.get_fill()
+        fill = json.dumps(fill_dict, ensure_ascii=False, indent=4)
+        logger.info(f'fill: {fill}')
 
     time.sleep(3)
 
