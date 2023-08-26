@@ -222,11 +222,13 @@ class Lex(Strategy):
 
         logger.info('checking for fills.')
 
-        while self.ibx.has_fill():
-            fill = self.ibx.get_fill()
+        while self._ibx.has_fill():
+            fill = self._ibx.get_fill()
             logger.info(f'Processing trade_id: {fill["trade_id"]}')
             self.pos_mgr.update_trades( fill, conversion_func=_convert_ib_fill )
 
+    def check_for_notifications(self):
+        self._ibx.check_notifications()
 
     def create_directory(self, directory_path):
         if not os.path.exists(directory_path):
@@ -362,6 +364,8 @@ class Lex(Strategy):
                     self.pos_mgr.update_durations()
                     logger.info('end of day completed.')
                     break
+
+            self.check_for_notifications()
 
             time.sleep(1)
 

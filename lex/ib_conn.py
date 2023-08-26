@@ -140,7 +140,8 @@ class IBWrapper(EWrapper):
         ## see pg 413 for filed descripitions
         super().orderStatus(order_id, status, filled, remaining, avg_fill_price, 
                           perm_id, parent_id, last_fill_price, client_id, why_held, mkt_cap_price )
-        ## FIX THIS
+        order_msg = f'order status message: order_id= {order_id}, status= {status}. TWS perm_id= {perm_}id}'
+        self.msg_queue.put(order_msg)
         pass
          
 
@@ -339,9 +340,10 @@ class IBClient(EClient):
             logger.error("response was empty or max time reached")
             requested_time = None
 
+
+    def check_notifications(self):
         while self.wrapper.has_msg():
-          logger.info(self.get_msg(timeout=5))
-          
+          logger.info(self.wrapper.get_msg(timeout=5))
 
     def account_update(self):
         logger.info('requested account update')
