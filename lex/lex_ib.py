@@ -1,9 +1,7 @@
 from strategy import Strategy
 from clockutils import TripWire, time_from_str
 from datetime import datetime
-#from quantrocket.realtime import get_prices 
-#from quantrocket.blotter import place_order, download_executions
-import test_harness as TESTER 
+#import test_harness as TESTER 
 import time, pandas 
 from posmgr import PosMgr, TradeSide, Trade, OrderType
 import calendar_calcs
@@ -25,12 +23,6 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 import argparse
-
-ANCHOR_ADJUST = 0
-
-# Connect to QuantRocket
-# Make sure you have a running QuantRocket deployment
-# and have configured the necessary credentials
 
 
 class Lex(Strategy):
@@ -54,7 +46,8 @@ class Lex(Strategy):
             raise e
         
         ## alter data for testing 
-        stock_df = TESTER.alter_data_to_anchor(stock_df, adjust_close=ANCHOR_ADJUST)
+        ## ANCHOR_ADJUST = -1.50 
+        ## stock_df = TESTER.alter_data_to_anchor(stock_df, adjust_close=ANCHOR_ADJUST)
 
         return stock_df
 
@@ -170,7 +163,7 @@ class Lex(Strategy):
             'symbol': symbol,
             'quantity': amount,
             'side': side.value,
-            'order_type': order_type,
+            'order_type': order_type.value,
             'info': order_notes
         }
         logger.info(json.dumps(order_info, ensure_ascii=False, indent =4 ))
@@ -224,8 +217,11 @@ class Lex(Strategy):
 
         while self._ibx.has_fill():
             fill = self._ibx.get_fill()
-            logger.info(f'Processing trade_id: {fill["trade_id"]}')
-            self.pos_mgr.update_trades( fill, conversion_func=_convert_ib_fill )
+            if fill is not None:
+                logger.info(f'Processing trade_id: {fill["trade_id"]}')
+                self.pos_mgr.update_trades( fill, conversion_func=_convert_ib_fill )
+            else:
+                logger.critical('returned an empty fill1 ???')
 
     def check_for_notifications(self):
         self._ibx.check_notifications()
@@ -266,10 +262,6 @@ class Lex(Strategy):
 
     def run_strategy(self):
 
-        global ANCHOR_ADJUST 
-
-        ANCHOR_ADJUST = -1.50 
-
         logger.info(f'starting strategy.')
 
         self.pos_mgr.initialize(self.strategy_id, set(self.cfg['universe']))
@@ -277,7 +269,7 @@ class Lex(Strategy):
 
         pp = self.pos_mgr.position_count()
         if pp == 0:
-            raise RuntimeError(f'No targeted positions for universe: {universe}')
+            raise RuntimeError(f'No targeted positions for universe: {self.cfg["universe"]}')
         if pp != 1:
             raise RuntimeError(f'Too many names: {self.pos_mgr.positions} - this a single name strategy')
 
@@ -301,8 +293,10 @@ class Lex(Strategy):
 
         time.sleep(5)
 
-        self.reconcile_positions()
+        self.reconcile_positions(symbol)
         trade_capital = self.reconcile_capital()
+
+        self.check_for_notifications()
 
         PRE_OPEN_TIME = "09:27"
         OPEN_TIME = "09:30"

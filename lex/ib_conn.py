@@ -49,13 +49,13 @@ class IBWrapper(EWrapper):
                                 1: 'Bid',
                                 2: 'Ask',
                                 3: 'AskSz',
-                                4: 'last',
+                                4: 'Last',
                                 5: 'LastSz',
+                                14: 'Open',
                                 6: 'High',
                                 7: 'Low',
-                                8: 'Volume',
                                 9: 'Close',
-                                14: 'Open',
+                                8: 'Volume',
                                 45: 'Server_TS'
         }
 
@@ -110,7 +110,7 @@ class IBWrapper(EWrapper):
             pass
 
         details = f'Acct Summary. req_Id {req_id}: account: {account}, tag: {tag},'
-        details += f' value: {value} currency: {currency)'
+        details += f' value: {value} currency: {currency}'
         logger.info(details)
 
         self.account_info[tag] = value
@@ -123,7 +123,6 @@ class IBWrapper(EWrapper):
     # Position handling methods
     def position(self, account, contract, position, avg_cost):
         super().position(account, contract, position, avg_cost)
-        super().accountSummary(req_id, account, tag, value, currency)
         try:
             tag = 'position'
             dur = datetime.now() - self.response_check[tag]
@@ -140,9 +139,8 @@ class IBWrapper(EWrapper):
         ## see pg 413 for filed descripitions
         super().orderStatus(order_id, status, filled, remaining, avg_fill_price, 
                           perm_id, parent_id, last_fill_price, client_id, why_held, mkt_cap_price )
-        order_msg = f'order status message: order_id= {order_id}, status= {status}. TWS perm_id= {perm_}id}'
+        order_msg = f'order status message: order_id= {order_id}, status= {status}. TWS perm_id= {perm_id}'
         self.msg_queue.put(order_msg)
-        pass
          
 
     def execDetails(self, order_id, contract, execution):
@@ -161,7 +159,7 @@ class IBWrapper(EWrapper):
             fill['order_id'] = order_id
             fill['symbol'] = contract.symbol
             fill['side'] = execution.side
-            fill['quantity'] = execution.shares
+            fill['quantity'] = abs(execution.shares)
             fill['price'] = execution.price
             fill['timestamp'] = execution.time
             fill['exchange'] = execution.exchange
@@ -171,6 +169,7 @@ class IBWrapper(EWrapper):
             try:
                 fill_details = self.order_executions.get(timeout=timeout)
                 fill = _convert_fill( *fill_details )
+                return fill
             except queue.Empty:
                 return None
         return None
@@ -255,7 +254,7 @@ class IBClient(EClient):
         order.action = side   
         order.orderType = "MKT" 
         order.transmit = True      ## used in conbo orders, default to True
-        order.totalQuantity = qty 
+        order.totalQuantity = abs(qty )
 
         return order   
 
@@ -305,7 +304,8 @@ class IBClient(EClient):
     def snap_prices(self, contract):
         ticker_id = self.next_req_id()
         ## request single price snapshot
-        self.reqMktData(ticker_id, contract, "", True, False, [])
+        ## pg 379 
+        self.reqMktData(ticker_id, contract, genericTickList="", snapshot=True, regulatory=False)
 
         ## defaultdict!  creates a new list on a new key.
         self.price_map[contract.symbol].append(ticker_id)
@@ -331,6 +331,7 @@ class IBClient(EClient):
 
         try:
             begin = datetime.now()
+            ## this call blocks - waits for an entry until timeout value
             requested_time = self.wrapper.ib_server_time.get(timeout = max_wait_time)
             end = datetime.now()
             logger.info(f'current server time: {requested_time}')
@@ -359,12 +360,12 @@ class IBClient(EClient):
 
 class IBConnection(IBWrapper, IBClient):
     #Intializes our main classes 
-    def __init__(self, ipaddress, portid, clientid):
+    def __init__(self, ipaddress, port_id, client_id):
         IBWrapper.__init__(self)
         IBClient.__init__(self, wrapper=self)
 
-        #Connects to the server with the ipaddress, portid, and clientId specified in the program execution area
-        self.connect(ipaddress, portid, clientid)
+        #Connects to the server with the ipaddress, port_id, and clientId specified in the program execution area
+        self.connect(ipaddress, port_id, client_id)
 
         #Initializes the threading
         self._thread = Thread(target = self.run)
