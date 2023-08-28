@@ -303,9 +303,8 @@ class IBClient(EClient):
 
     def snap_prices(self, contract):
         ticker_id = self.next_req_id()
-        ## request single price snapshot
-        ## pg 379 
-        self.reqMktData(ticker_id, contract, genericTickList="", snapshot=True, regulatory=False)
+        ## request single price snapshot, set snapshot = True, pg 378 
+        self.reqMktData(ticker_id, contract, "", True, False, [])
 
         ## defaultdict!  creates a new list on a new key.
         self.price_map[contract.symbol].append(ticker_id)
