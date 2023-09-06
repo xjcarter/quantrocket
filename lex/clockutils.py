@@ -12,6 +12,14 @@ formatter = logging.Formatter(FORMAT, datefmt='%a %Y-%m-%d %H:%M:%S')
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
+
+def unix_time_to_string(unix_time_ms):
+    # Convert Unix time in milliseconds to seconds
+    unix_time_seconds = unix_time_ms / 1000.0
+    dt = datetime.datetime.utcfromtimestamp(unix_time_seconds)
+
+    return dt.strftime("%Y%m%d-%H:%M:%S")
+
 ## create datetime for string in "%Y%m%d-%H%M%S"
 def date_from_str(dstring):
     return datetime.strptime(dstring,"%Y%m%d").date()
