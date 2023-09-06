@@ -1,0 +1,28 @@
+
+api root:
+   "https://hostname:5000/v1/api"
+
+-- getting market data:
+   1. setup - call these first to initialize grabbing price snapshots
+       -- /iserver/accounts
+       -- /iserver/marketdata/snapshot/
+   2. /iserver/marketdata/snaphot/  -ask and recv mkt data
+
+-- getting positions:
+   1. /portfolio/{accountId}/position/{conid}
+
+-- getting conids for a symbol
+   1. /trsrv/stocks/
+
+-- placing orders
+   1. /iserver/account/{accountId}/orders
+
+-- monitor fills 
+   1. /iserver/account/orders
+   2. /iserver/account/order/status/{orderId}
+
+-- ping server
+   1. /tickle   - call to maintain server connection, server expects some request every 60 seconds
+   
+-- logout
+   1. /logout
