@@ -43,7 +43,7 @@ def order_request(contract_id, order_type, side, qty):
         'order_id': order_json.get('order_id')
         'order_status': order_json.get('order_status')
         'reply_id': order_json.get('id')
-        'reply_messeage': order_json.get('message')
+        'reply_message.g': order_json.get('message')
     }
 
     return order_info
@@ -55,7 +55,7 @@ def order_reply(reply_id, repeat=True):
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'iserver/reply/'
    
-    while reply_id != None:
+    while reply_id is not None:
 
         reply_url = "".join([base_url, endpoint, reply_id])
 
@@ -73,26 +73,26 @@ def order_reply(reply_id, repeat=True):
             'order_id': order_json.get('order_id')
             'order_status': order_json.get('order_status')
             'reply_id': order_json.get('id')
-            'reply_messeage': order_json.get('message')
+            'reply_message.g': order_json.get('message')
         }
 
         if repeat:
-            new_reply_id = order_info['reply_id']
-            if new_reply_id != None and new_reply_id != reply_id:
-                reply_id = new_reply_id
-            else:
-                err_msg = 'error: current reply_id = new reply_id!'
-                print(err_msg)
-                raise RuntimeError(err_msg)
-                break
+            new_reply_id = order_info.get('reply_id')
+            if new_reply_id is not None:
+                if new_reply_id != reply_id:
+                    reply_id = new_reply_id
+                else:
+                    err_msg = 'error: current reply_id = new reply_id!'
+                    print(err_msg)
+                    raise RuntimeError(err_msg)
+                    break
 
     return order_info 
 
 
-def order_status(filters):
+def order_status(filters=['inactive', 'cancelled', 'filled']):
 
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
-    account = os.getenv('IB_ACCOUNT', 'wccpid782')
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'iserver/account/order'
 
@@ -108,6 +108,8 @@ def order_status(filters):
    
     filters_string = ",".join(my_filters)
     request_url = base_url+endpoint
+
+    ## is filters param a big F?!!
     if len(filters_string) > 0:
         request_url += f'?Filters={filters_string}'
 
@@ -120,13 +122,84 @@ def order_status(filters):
     return fill_json.get('orders') 
 
 
+class OrderMonitor(object):
+    def __init__(self):
+        self.last_orders = dict() 
+
+    def _generate_fill(current_order):
+
+        remaining = 'remainingQuantity'
+        filled = 'filledQuantity'
+        price = 'price'
+
+        fill = dict()
+        
+        number_of_fills = 1
+        n_order_id = current_order['orderId']
+        last_order = self.last_orders.get(n_order_id) 
+        if last_order is not None:
+            if last_order[remaining] == current_order[remaining]:
+                ## nothing has changed 
+                return None
+            else:
+                number_of_fills = last_order['number_of_fills'] + 1
+
+                filled_qty = current_order[filled]
+                last_qty = last_order[filled]
+
+                if filled_qty < last_qty:
+                    raise RuntimeError(f'filled_qty: {filled_qty} < last_qty {last_qty}')
+
+                filled_price = current_order[price]
+                last_price = last_order[price]
+
+                ## calc partial fill amount and price
+                residual = filled_qty - last_qty
+                residual_price = ((filled_qty*filed_price) - (last_qty*last_price)) / residual
+                fill.update({ 'qty':residual, 'price': residual_price})
+        else:
+            fill.update({ 'qty':current_order[filled], 'price':current_order[price] })
+
+        self.last_orders[n_order_id] = current_order
+        self.last_orders[n_order_id]['number_of_fills'] = number_of_fills
+
+        tms= 'lastExecutionTime_r'
+        fill['order_id'] = n_order_id 
+        fill['trade_id'] = f'{n_order_id}-{number_of_fills:04d}' 
+        fill['ticker'] = current_order['ticker']
+        fill['side'] = current_order['side']
+        fill['conidex'] = current_order['conidex']
+        fill[tms] = current_order[tms]
+
+        jfill = json.dumps(fill, ensure_ascii=False, indent=4)
+        print(f'processed fill: {jfill}')
+
+        return fill
 
 
-## initializes marlet subscription - call before snapshot
+    def monitor_orders(self):
+
+        ## call the endpoint to grab all current orders 
+        orders = order_status()
+
+        fills = list()
+        for order in orders:
+            status = order['status']
+            if status == 'filled':
+                fill = self._generate_fill(order)
+                if fill is not None: fills.append(fill)
+            elif status in ['cancelled', 'inactive']:
+                print(f'warning: orderId= {n_order_id} {status}. {order["orderDesc"]}')
+            elif status == 'submitted':
+                print(f'orderId= {n_order_id} {status}. {order["orderDesc"]}')
+
+        return fills
+                    
+      
+##initializes market subscription - call before snapshot
 def market_connect(contract_id):
     
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
-    account = os.getenv('IB_ACCOUNT', 'wccpid782')
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'iserver/marketdata/snapshot'
 
@@ -180,7 +253,8 @@ def market_snapshot(contract_id):
             'conid': ('6008', int)
     }
 
-    values = ",".join(field_dict.values())
+    field_codes = [ v[0] for v in field_dict.values() ]
+    values = ",".join(field_codes)
     fields=f'fields={values}'
 
     params = "&".join([f'conids={contract_id}', fields])
@@ -254,7 +328,6 @@ def stock_to_contract_id(symbols_list):
 def tickle():
     
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
-    account = os.getenv('IB_ACCOUNT', 'wccpid782')
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'tickle'
 

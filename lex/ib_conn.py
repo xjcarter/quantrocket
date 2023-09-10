@@ -28,6 +28,8 @@ logger.addHandler(console_handler)
 ## IBWrapper is the class that receives requested data from the server.
 ## via callbacks (that need to be overriden to save captured data 
 
+## IMPORTANT - this interface can be used when your IB Trader Workstation
+
 class IBWrapper(EWrapper):
 
     def __init__(self):
