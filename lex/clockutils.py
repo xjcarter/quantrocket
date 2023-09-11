@@ -20,6 +20,14 @@ def unix_time_to_string(unix_time_ms):
 
     return dt.strftime("%Y%m%d-%H:%M:%S")
 
+def timestamp_string(split_date_and_time=False):
+    now = datetime.now()
+    ss = now.strftime("%Y%m%d-%H:%M:%S")
+    if split_date_and_time:
+        return ss.split('-')
+    else:
+        return ss
+
 ## create datetime for string in "%Y%m%d-%H%M%S"
 def date_from_str(dstring):
     return datetime.strptime(dstring,"%Y%m%d").date()

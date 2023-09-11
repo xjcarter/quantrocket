@@ -269,6 +269,8 @@ def market_snapshot(contract_id):
     data_dict = md_req[0]
     ## v[0] data field number, v[1] conversion func for the field
     market_data = dict([ (k, v[1](data_dict.get(v[0])) ) for k,v in fields_dict.items() ])
+    dd, tt = clockutils.timestamp_string(split_date_and_time=True)
+    market_data.update( { 'date': dd, 'time': tt } )
 
     return market_data
     

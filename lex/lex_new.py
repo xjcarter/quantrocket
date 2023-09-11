@@ -7,7 +7,6 @@ from posmgr import PosMgr, TradeSide, Trade, OrderType
 import calendar_calcs
 from indicators import MondayAnchor, StDev
 import os, sys, json
-import uuid
 import ib_endpoints
 
 
@@ -33,7 +32,6 @@ class Lex(Strategy):
         self.order_monitor = ib_endpoints.OrderMonitor()
         self.pos_mgr = PosMgr()
         self.intra_prices = list()
-        self.last_order_status = None
         self.contract_id = None
         self.symbol = None
 
@@ -108,14 +106,14 @@ class Lex(Strategy):
             bid, ask = last_print['bid'], last_print['ask']
             bid_size, ask_size = last_print['bidsz'], last_print['asksz']
             if show_volume:
-                logger.info(f'current bid/ask for {symbol}: bid:{bid_price} ({bid_size}), ask:{ask_price} ({ask_size})')
+                logger.info(f'current bid/ask for {self.symbol}: bid:{bid_price} ({bid_size}), ask:{ask_price} ({ask_size})')
                 return bid, ask, bid_size, ask_size
             else:
-                logger.info(f'current bid/ask for {symbol}: bid:{bid_price}, ask:{ask_price}')
+                logger.info(f'current bid/ask for {self.symbol}: bid:{bid_price}, ask:{ask_price}')
                 return bid, ask
 
         except RuntimeError(e):
-            logger.critical(f'No price data available for contract_id= {self.contract_id}!')
+            logger.critical(f'No price data available for symbol= {self.symbol}, contract_id= {self.contract_id}!')
             logger.critical(e)
 
 
@@ -153,7 +151,10 @@ class Lex(Strategy):
 
         logger.info('sending order.')
 
-        order_id = ib_endpoints.order_request(self.contract_id, order_type.value, side.value, amount)
+        order_info = ib_endpoints.order_request(self.contract_id, order_type.value, side.value, amount)
+        if order_info.get('reply_id') is not None:
+            ## confirm to server that you want to send this order
+            order_info = ib_endpoints.order_reply(order_info['reply_id'])
 
         logger.info(f'order_id: {order_id} submitted.')
 
@@ -170,8 +171,8 @@ class Lex(Strategy):
         return order_info
 
 
-    def calc_trade_amount(self, symbol, trade_capital):
-        bid, ask = self.get_bid_ask(symbol)
+    def calc_trade_amount(self, trade_capital):
+        bid, ask = self.get_bid_ask()
         spread = abs(bid - ask)
 
         ## we can get more creative with this by monitoring spread
@@ -186,7 +187,8 @@ class Lex(Strategy):
             if v is not None:
                 return sides[v.upper()]
             else:
-                raise RuntimeError(f'no BUY/SELL action indicated in order!\n order: {order}')
+                fill_json = json.dumps(fill, ensure_ascii=False, indent=4)
+                raise RuntimeError(f'no BUY/SELL action indicated in order fill!\n order fill: {fill_json}')
 
         ## map ib web api order fill
         def _convert_ib_fill(fill):
