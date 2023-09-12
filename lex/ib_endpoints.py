@@ -217,6 +217,25 @@ def order_status(filters=['inactive', 'cancelled', 'filled']):
     """
 
 
+### this was a test helper function
+### it replaces the order_status() call 
+### inside the OrderMonitor.monitor_orders() method
+TESTFILE_COUNTER = 0
+def mock_order_status():
+    global TESTFILE_COUNTER
+    snapshot_files = ['snap_order1.txt', 'snap_order2.txt', 'snap_order3.txt']
+
+    if TESTFILE_COUNTER < 3:
+        snapfile = snapshot_files[TESTFILE_COUNTER]
+        print(f'snapshot: {snapfile}')
+        with open(snapfile, 'r') as f:
+            orders = json.load(f)
+        TESTFILE_COUNTER += 1
+        return orders['orders']
+
+    return None
+
+
 class OrderMonitor(object):
     def __init__(self):
         self.last_orders = dict() 
@@ -239,27 +258,27 @@ class OrderMonitor(object):
             else:
                 number_of_fills = last_order['number_of_fills'] + 1
 
-                filled_qty = current_order[filled]
-                last_qty = last_order[filled]
+                filled_qty = float(current_order[filled])
+                last_qty = float(last_order[filled])
 
                 if filled_qty < last_qty:
                     ## the updated total fill amount DECREASED - throw error
                     raise RuntimeError(f'filled_qty: {filled_qty} < last_qty {last_qty}')
 
-                filled_price = current_order[price]
-                last_price = last_order[price]
+                filled_price = float(current_order[price])
+                last_price = float(last_order[price])
 
                 ## calc partial fill amount and price
                 residual = filled_qty - last_qty
                 residual_price = ((filled_qty*filled_price) - (last_qty*last_price)) / residual
                 fill.update({ 'qty':residual, 'price': residual_price})
         else:
-            fill.update({ 'qty':current_order[filled], 'price':current_order[price] })
+            fill.update({ 'qty': float(current_order[filled]), 'price': float(current_order[price]) })
 
         self.last_orders[n_order_id] = current_order
         self.last_orders[n_order_id]['number_of_fills'] = number_of_fills
 
-        tms= 'lastExecutionTime_r'
+        ttest_order_requestms= 'lastExecutionTime_r'
         fill['order_id'] = n_order_id 
         fill['trade_id'] = f'{n_order_id}-{number_of_fills:04d}' 
         fill['ticker'] = current_order['ticker']
