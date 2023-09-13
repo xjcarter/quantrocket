@@ -30,32 +30,45 @@ def _check_fail(req, msg):
         raise RuntimeError(err_msg)
 
 
-def order_request(contract_id, order_type, side, qty):
+def order_request(contract_id, order_type, side, qty, tgt_price=None, lmt_price=None):
 
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     account = os.getenv('IB_ACCOUNT', 'DU7631004')
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'iserver/account/{account}/orders'
 
-    json_body = {
-            "orders":[ 
-                {
+    base_order = {
                     "conid": contract_id,
                     "orderType": order_type,
                     "side": side,
                     "tif": "DAY",
                     "quantity": qty
                 }
-            ]
-    }
     
+    if order_type in ['STP', 'LMT']:
+        ## tgt_price drives both limit and stop orders
+        if tgt_price is not None:
+            base_order.update( { "price": tgt_price } )
+        else:
+            print('critical: order ignored. no target price given for STOP or LIMIT order!')
+            return None
+
+    if order_type == 'STOP_LIMIT':
+        if all([tgt_price, lmt_price]):
+            base_order.update( { "price": lmt_price, "auxPrice": tgt_price } )
+        else:
+            print('critical: order ignored. incomplete STOP_LIMIT order!')
+            return None
+
+    json_body = { "orders": [ base_order ] }
+
     order_req = requests.post(url=base_url+endpoint, verify=False, json=json_body)
     _check_fail(order_req, 'couldnt place order')
     order_json = json.dumps(order_req.json(), ensure_ascii=False, indent=4)\
 
     print(order_json) 
 
-    record = order_req[0]
+    record = order_req.json()[0]
 
     order_info = {
         'order_id': record.get('order_id'),
@@ -67,12 +80,27 @@ def order_request(contract_id, order_type, side, qty):
     return order_info
 
     """
-    sample response:
+    sample response of a SUCCESSFUL submission:
     [
         {
             "order_id": "1149239278",
             "order_status": "PreSubmitted",
             "encrypt_message": "1"
+        }
+    ]
+
+    sample response of a reply request submission:
+    feed the reply "id" into the order_reply() endpoint to resolve
+    [
+        {
+            "id": "8647ed1d-862b-4c58-95ff-ae6dd6893871",
+            "message": [
+                "This order will most likely trigger and fill immediately.\nAre you sure you want to submit this order?"
+            ],
+            "isSuppressed": false,
+            "messageIds": [
+                "o0"
+            ]
         }
     ]
     """
@@ -87,7 +115,7 @@ def order_reply(reply_id, repeat=True):
     while reply_id is not None:
 
         ## responding to 'are you sure?' reply
-        json_body = {"confirmed": True}
+        json_body = { "confirmed": True }
 
         reply_req = requests.post(url=base_url+endpoint, verify=False, json=json_body)
         _check_fail(reply_req, 'order request reply')
@@ -95,7 +123,7 @@ def order_reply(reply_id, repeat=True):
 
         print(reply_json)
 
-        record = order_req[0]
+        record = reply_req.json()[0]
 
         order_info = {
             'order_id': record.get('order_id'),
@@ -103,19 +131,31 @@ def order_reply(reply_id, repeat=True):
             'reply_id': record.get('id'),
             'reply_message': record.get('message')
         }
+        
+        new_reply_id = order_info.get('reply_id')
+        if repeat and new_reply_id:
+            if new_reply_id != reply_id:
+                reply_id = new_reply_id
+            else:
+                err_msg = f'error: current reply_id = new reply_id! {reply_id}'
+                print(err_msg)
+                raise RuntimeError(err_msg)
+        else:
+            break
 
-        if repeat:
-            new_reply_id = order_info.get('reply_id')
-            if new_reply_id is not None:
-                if new_reply_id != reply_id:
-                    reply_id = new_reply_id
-                else:
-                    err_msg = 'error: current reply_id = new reply_id!'
-                    print(err_msg)
-                    raise RuntimeError(err_msg)
-                    break
+    return order_info
 
-    return order_info 
+    """
+    look to the order_info dictionary to see if additional replies need to be sent:
+    -- order reply info--
+    {
+        "order_id": "749645736",
+        "order_status": "PreSubmitted",
+        "reply_id": null,
+        "reply_message": null
+    }
+    if repeat == True: the method will continue to resubmit until the order is accepeted.
+    """
 
 
 def order_status(filters=['inactive', 'cancelled', 'filled']):
@@ -152,6 +192,14 @@ def order_status(filters=['inactive', 'cancelled', 'filled']):
     return fill_req.json().get('orders') 
 
     """
+    first call will 'connect' to get order status -
+    sample response:
+    {
+        "orders": [],
+        "snapshot": false
+    }
+
+    subsequent order_status() calls will provide order status info -
     sample response:
     {
         "orders": [
