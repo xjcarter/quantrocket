@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import pytz
 
 import logging
 # Create a logger specific to __main__ module
@@ -13,10 +14,13 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 
-def unix_time_to_string(unix_time_ms):
+def unix_time_to_string(unix_time_ms, timezone='America/New_York'):
     # Convert Unix time in milliseconds to seconds
     unix_time_seconds = unix_time_ms / 1000.0
-    dt = datetime.datetime.utcfromtimestamp(unix_time_seconds)
+    utc_dt = datetime.utcfromtimestamp(unix_time_seconds)
+
+    desired_tz = pytz.timezone(timezone)
+    dt = utc_dt.replace(tzinfo=pytz.utc).astimezone(desired_tz)
 
     return dt.strftime("%Y%m%d-%H:%M:%S")
 

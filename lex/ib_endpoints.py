@@ -2,9 +2,28 @@ import requests
 import json
 import urllib3
 import os
+import re
+from clockutils import timestamp_string, unix_time_to_string 
 
 ## suppress non-secure connection warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+def _xns(number_string):
+    if isinstance(number_string, (int, float)):
+        return number_string
+
+    ## _xns = extract_number_from_string
+    ## Define a regular expression pattern to match numbers with optional '$' and commas
+    pattern = r'\$?[\d,]+(?:\.\d+)?'
+    numbers = re.findall(pattern, number_string)
+
+    if numbers:
+        # Remove commas and dollar signs, then convert to a float
+        cleaned_number = float(numbers[0].replace(',', '').replace('$', ''))
+        return cleaned_number
+    else:
+        # Return None if no numbers are found in the string
+        return None
 
 
 def _check_fail(req, msg):
@@ -400,7 +419,7 @@ def market_connect(contract_id):
     params = "&".join([f'conids={contract_id}', fields])
     request_url = "".join([base_url, endpoint, "?", params])
 
-    md_req = request.get(url=request_url, verify=False)
+    md_req = requests.get(url=request_url, verify=False)
     _check_fail(md_req, 'market connect error')
     md_json = json.dumps(md_req.json(), ensure_ascii=False, indent=4)
     print(md_json)
@@ -408,6 +427,16 @@ def market_connect(contract_id):
     print(f'market connected for conid= {contract_id}')
 
     return True
+
+    """
+    sample response:
+    [
+        {
+            "conidEx": "265598",
+            "conid": 265598
+        }
+    ]
+    """
 
 
 def market_snapshot(contract_id):
@@ -417,22 +446,20 @@ def market_snapshot(contract_id):
     endpoint = f'iserver/marketdata/snapshot'
 
     def _v_x100(v):
+        v = _xns(v)
         if v is None: return v
         return int(v) * 100
  
     def _int(v):
+        v = _xns(v)
         if v is None: return v
         return int(v)
 
     def _float(v):
+        v = _xns(v)
         if v is None: return v
         return float(v)
 
-    def _str(v):
-        if v is None: return v
-        return float(v)
-        
-         
     field_dict = {
             'last': ('31', _float),
             'ask': ('84', _float),
@@ -440,8 +467,8 @@ def market_snapshot(contract_id):
             'bid_sz': ('88', _v_x100),
             'ask_sz': ('85', _v_x100),
             'volume': ('7762', _int),
-            'symbol': ('55', _str),
-            'conid': ('6008', int)
+            'symbol': ('55', str),
+            'conid': ('6008', str)
     }
 
     field_codes = [ v[0] for v in field_dict.values() ]
@@ -451,20 +478,63 @@ def market_snapshot(contract_id):
     params = "&".join([f'conids={contract_id}', fields])
     request_url = "".join([base_url, endpoint, "?", params])
 
-    md_req = request.get(url=request_url, verify=False)
+    md_req = requests.get(url=request_url, verify=False)
     _check_fail(md_req, 'market snapshot error')
     md_json = json.dumps(md_req.json(), ensure_ascii=False, indent=4)
     print(md_json)
 
-    data_dict = md_req[0]
+    data_dict = md_req.json()[0]
     ## v[0] data field number, v[1] conversion func for the field
-    market_data = dict([ (k, v[1](data_dict.get(v[0])) ) for k,v in fields_dict.items() ])
-    dd, tt = clockutils.timestamp_string(split_date_and_time=True)
+    market_data = dict([ (k, v[1](data_dict.get(v[0])) ) for k,v in field_dict.items() ])
+    dd, tt = timestamp_string(split_date_and_time=True)
     market_data.update( { 'date': dd, 'time': tt } )
+    
+    ## tack on non 'number_tageged' fields
+    for add_on in [ 'conid', '_updated' ]:
+        market_data.update( { add_on: data_dict.get(add_on) } )
+    ## convert unix timestamp
+    unix_ts = market_data['_updated']
+    if unix_ts: market_data['_updated'] = unix_time_to_string(unix_ts) 
 
     return market_data
-    
 
+    """
+    sample response:
+    [
+        {
+            "conidEx": "265598",
+            "conid": 265598,
+            "server_id": "q0",
+            "_updated": 1694639699133,
+            "6119": "q0",
+            "55": "AAPL",
+            "7762": "83916700",
+            "85": "200",
+            "84": "173.95",
+            "88": "800",
+            "31": "173.96",
+            "86": "173.96",
+            "6509": "DPB",
+            "6508": "&serviceID1=122&serviceID2=123&serviceID3=203&serviceID4=775&serviceID5=204&serviceID6=206&serviceID7=108&serviceID8=109"
+        }
+    ]
+
+    -- returned market_data dict:
+    {
+        "last": 173.96,
+        "ask": 173.95,
+        "bid": 173.96,
+        "bid_sz": 80000,
+        "ask_sz": 20000,
+        "volume": 83916700,
+        "symbol": "AAPL",
+        "conid": 265598,
+        "date": "20230913",
+        "time": "17:15:00",
+        "_updated": "20230913-17:14:59"
+    }
+    """
+        
 def account_summary():
     
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
