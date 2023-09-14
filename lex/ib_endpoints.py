@@ -3,17 +3,34 @@ import json
 import urllib3
 import os
 import re
+import sys
 from clockutils import timestamp_string, unix_time_to_string 
+
+import logging
+# Create a logger specific to __main__ module
+logger = logging.getLogger(__name__)
+#logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.DEBUG)
+FORMAT = "%(asctime)s: %(levelname)8s [%(module)15s:%(lineno)3d - %(funcName)20s ] %(message)s"
+formatter = logging.Formatter(FORMAT, datefmt='%a %Y-%m-%d %H:%M:%S')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
 
 ## suppress non-secure connection warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def _xns(number_string):
+def _fmtn(number_string):
+    ## _fmtn = format_number_from_string
+
     if isinstance(number_string, (int, float)):
         return number_string
 
-    ## _xns = extract_number_from_string
-    ## Define a regular expression pattern to match numbers with optional '$' and commas
+    if not isinstance(number_string, str):
+        return None
+
     pattern = r'\$?[\d,]+(?:\.\d+)?'
     numbers = re.findall(pattern, number_string)
 
@@ -33,19 +50,19 @@ def _check_fail(req, msg):
 
     if req.status_code == 400:
         err_msg = f'{msg}: status_code= {req.status_code}, Bad request'
-        print(err_msg)
+        logger.error(err_msg)
         raise RuntimeError(err_msg)
     elif req.status_code == 401:
         err_msg = f'{msg}: status_code= {req.status_code}, Unauthorized to access endpoint'
-        print(err_msg)
+        logger.error(err_msg)
         raise RuntimeError(err_msg)
     elif req.status_code == 404:
         err_msg = f'{msg}: status_code= {req.status_code}, endpoint Not Found'
-        print(err_msg)
+        logger.error(err_msg)
         raise RuntimeError(err_msg)
     else:
         err_msg = f'{msg}: status_code= {req.status_code}'
-        print(err_msg)
+        logger.error(err_msg)
         raise RuntimeError(err_msg)
 
 
@@ -69,23 +86,25 @@ def order_request(contract_id, order_type, side, qty, tgt_price=None, lmt_price=
         if tgt_price is not None:
             base_order.update( { "price": tgt_price } )
         else:
-            print('critical: order ignored. no target price given for STOP or LIMIT order!')
+            logger.critical('order ignored. no target price given for STOP or LIMIT order!')
             return None
 
     if order_type == 'STOP_LIMIT':
         if all([tgt_price, lmt_price]):
             base_order.update( { "price": lmt_price, "auxPrice": tgt_price } )
         else:
-            print('critical: order ignored. incomplete STOP_LIMIT order!')
+            logger.critical('order ignored. incomplete STOP_LIMIT order!')
             return None
 
     json_body = { "orders": [ base_order ] }
+
+    logger.debug(f'url= {base_url}{endpoint}, json_body = {json_body}')
 
     order_req = requests.post(url=base_url+endpoint, verify=False, json=json_body)
     _check_fail(order_req, 'couldnt place order')
     order_json = json.dumps(order_req.json(), ensure_ascii=False, indent=4)\
 
-    print(order_json) 
+    logger.debug(order_json) 
 
     record = order_req.json()[0]
 
@@ -136,11 +155,13 @@ def order_reply(reply_id, repeat=True):
         ## responding to 'are you sure?' reply
         json_body = { "confirmed": True }
 
+        logger.debug(f'url= {base_url}{endpoint}, json_body = {json_body}')
+
         reply_req = requests.post(url=base_url+endpoint, verify=False, json=json_body)
         _check_fail(reply_req, 'order request reply')
         reply_json = json.dumps(reply_req.json(), ensure_ascii=False, indent=4)
 
-        print(reply_json)
+        logger.debug(reply_json)
 
         record = reply_req.json()[0]
 
@@ -157,7 +178,7 @@ def order_reply(reply_id, repeat=True):
                 reply_id = new_reply_id
             else:
                 err_msg = f'error: current reply_id = new reply_id! {reply_id}'
-                print(err_msg)
+                logger.error(err_msg)
                 raise RuntimeError(err_msg)
         else:
             break
@@ -166,14 +187,18 @@ def order_reply(reply_id, repeat=True):
 
     """
     look to the order_info dictionary to see if additional replies need to be sent:
+
     -- order reply info--
+
     {
         "order_id": "749645736",
         "order_status": "PreSubmitted",
         "reply_id": null,
         "reply_message": null
     }
+
     if repeat == True: the method will continue to resubmit until the order is accepeted.
+
     """
 
 
@@ -191,7 +216,7 @@ def order_status(filters=['inactive', 'cancelled', 'filled']):
         if f in filter_codes:
             my_filters.append(f)
         else:
-            print(f'order filter: {f} not valid.')
+            logger.error(f'order filter: {f} not valid.')
    
     filters_string = ",".join(my_filters)
     request_url = base_url+endpoint
@@ -200,13 +225,12 @@ def order_status(filters=['inactive', 'cancelled', 'filled']):
     if len(filters_string) > 0:
         request_url += f'?Filters={filters_string}'
 
-
-    print(request_url)
+    logger.debug(f'url= {request_url}')
 
     fill_req = requests.get(url=request_url, verify=False)
     _check_fail(fill_req, 'check fills error')
     fill_json = json.dumps(fill_req.json(), ensure_ascii=False, indent=4)
-    print(fill_json)
+    logger.debug(fill_json)
 
     return fill_req.json().get('orders') 
 
@@ -294,7 +318,7 @@ def mock_order_status():
 
     if TESTFILE_COUNTER < 3:
         snapfile = snapshot_files[TESTFILE_COUNTER]
-        print(f'snapshot: {snapfile}')
+        logger.debug(f'snapshot: {snapfile}')
         with open(snapfile, 'r') as f:
             orders = json.load(f)
         TESTFILE_COUNTER += 1
@@ -330,7 +354,9 @@ class OrderMonitor(object):
 
                 if filled_qty < last_qty:
                     ## the updated total fill amount DECREASED - throw error
-                    raise RuntimeError(f'filled_qty: {filled_qty} < last_qty {last_qty}')
+                    err_msg = f'filled_qty: {filled_qty} < last_qty {last_qty}'
+                    logger.error(err_msg)
+                    raise RuntimeError(err_msg)
 
                 filled_price = float(current_order[price])
                 last_price = float(last_order[price])
@@ -345,16 +371,17 @@ class OrderMonitor(object):
         self.last_orders[n_order_id] = current_order
         self.last_orders[n_order_id]['number_of_fills'] = number_of_fills
 
-        ttest_order_requestms= 'lastExecutionTime_r'
+        tms= 'lastExecutionTime_r'
         fill['order_id'] = n_order_id 
         fill['trade_id'] = f'{n_order_id}-{number_of_fills:04d}' 
         fill['ticker'] = current_order['ticker']
         fill['side'] = current_order['side']
         fill['conidex'] = current_order['conidex']
         fill[tms] = current_order[tms]
+        fill['lastExecutionTime_str'] = unix_time_to_string(fill[tms])
 
         jfill = json.dumps(fill, ensure_ascii=False, indent=4)
-        print(f'processed fill: {jfill}')
+        logger.debug(f'processed fill: {jfill}')
 
         return fill
 
@@ -363,6 +390,7 @@ class OrderMonitor(object):
 
         ## call the endpoint to grab all current orders 
         orders = order_status()
+        ## FOR TESTING!!! orders = mock_order_status()
 
         fills = list()
         for order in orders:
@@ -373,15 +401,16 @@ class OrderMonitor(object):
                 fill = self._generate_fill(order)
                 if fill is not None: fills.append(fill)
             elif status in ['cancelled', 'inactive']:
-                print(f'warning: orderId= {n_order_id} {status}. {ticker} {order["orderDesc"]}')
+                logger.warning(f'orderId= {n_order_id} {status}. {ticker} {order["orderDesc"]}')
             elif status == 'submitted':
-                print(f'orderId= {n_order_id} {status}. {ticker} {order["orderDesc"]}')
+                logger.info(f'orderId= {n_order_id} {status}. {ticker} {order["orderDesc"]}')
 
         return fills
 
     """
     tested.
-    sammple output from  'for fill in order_monitor.monitor_orders():: print(fill)' 
+    sample output from  'for fill in order_monitor.monitor_orders():' 
+
     processed fill: {
         "qty": 100.0,
         "price": "176.32",
@@ -419,12 +448,14 @@ def market_connect(contract_id):
     params = "&".join([f'conids={contract_id}', fields])
     request_url = "".join([base_url, endpoint, "?", params])
 
+    logger.debug(f'url= {request_url}')
+
     md_req = requests.get(url=request_url, verify=False)
     _check_fail(md_req, 'market connect error')
     md_json = json.dumps(md_req.json(), ensure_ascii=False, indent=4)
-    print(md_json)
+    logger.debug(md_json)
 
-    print(f'market connected for conid= {contract_id}')
+    logger.info(f'market connected for conid= {contract_id}')
 
     return True
 
@@ -446,17 +477,17 @@ def market_snapshot(contract_id):
     endpoint = f'iserver/marketdata/snapshot'
 
     def _v_x100(v):
-        v = _xns(v)
+        v = _fmtn(v)
         if v is None: return v
         return int(v) * 100
  
     def _int(v):
-        v = _xns(v)
+        v = _fmtn(v)
         if v is None: return v
         return int(v)
 
     def _float(v):
-        v = _xns(v)
+        v = _fmtn(v)
         if v is None: return v
         return float(v)
 
@@ -478,10 +509,12 @@ def market_snapshot(contract_id):
     params = "&".join([f'conids={contract_id}', fields])
     request_url = "".join([base_url, endpoint, "?", params])
 
+    logger.debug(f'url= {request_url}')
+
     md_req = requests.get(url=request_url, verify=False)
     _check_fail(md_req, 'market snapshot error')
     md_json = json.dumps(md_req.json(), ensure_ascii=False, indent=4)
-    print(md_json)
+    logger.debug(md_json)
 
     data_dict = md_req.json()[0]
     ## v[0] data field number, v[1] conversion func for the field
@@ -489,7 +522,7 @@ def market_snapshot(contract_id):
     dd, tt = timestamp_string(split_date_and_time=True)
     market_data.update( { 'date': dd, 'time': tt } )
     
-    ## tack on non 'number_tageged' fields
+    ## tack on non 'number_tagged' fields
     for add_on in [ 'conid', '_updated' ]:
         market_data.update( { add_on: data_dict.get(add_on) } )
     ## convert unix timestamp
@@ -542,10 +575,12 @@ def account_summary():
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'portfolio/{account}/summary'
 
+    logger.debug(f'url= {base_url}{endpoint}')
+
     pos_req = requests.get(url=base_url+endpoint, verify=False)
     _check_fail(pos_req, 'account summary error')
     pos_json = json.dumps(pos_req.json(), ensure_ascii=False, indent=4)
-    print(pos_json)
+    logger.debug(pos_json)
 
     return pos_req.json()
 
@@ -579,10 +614,12 @@ def current_position(contract_id):
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'portfolio/{account}/position/{contract_id}'
 
+    logger.debug(f'url= {base_url}{endpoint}')
+
     pos_req = requests.get(url=base_url+endpoint, verify=False)
     _check_fail(pos_req, 'current position error')
     pos_json = json.dumps(pos_req.json(), ensure_ascii=False, indent=4)
-    print(pos_json)
+    logger.debug(pos_json)
 
     return pos_req.json()
 
@@ -627,13 +664,16 @@ def stock_to_contract_id(symbols_list):
     symbols = f'symbols={syms}'
 
     url = "".join([base_url, endpoint, "?", symbols])
+
+    logger.debug(f'url= {url}')
+
     stk_req = requests.get(url=url, verify=False)
     _check_fail(stk_req, 'stock conid lookup error')
     stk_json = json.dumps(stk_req.json(), ensure_ascii=False, indent=4)
 
-    print(stk_json)
+    logger.debug(stk_json)
 
-    return stk_json
+    return stk_req.json()
 
     """
     sample output -> stock_to_contract_id(['AAPL', 'IBM'])
@@ -736,11 +776,15 @@ def status():
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'iserver/auth/status'
 
+    logger.debug(f'url= {base_url}{endpoint}')
+
     svr_req = requests.get(url=base_url+endpoint, verify=False)
     _check_fail(svr_req, 'auth status error')
     svr_json = json.dumps(svr_req.json(), ensure_ascii=False, indent=4)
 
-    print(svr_json)
+    logger.debug(svr_json)
+
+    return svr_req.json()
 
     """
     sample response:
@@ -765,11 +809,15 @@ def tickle():
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'tickle'
 
+    logger.debug(f'url= {base_url}{endpoint}')
+
     svr_req = requests.get(url=base_url+endpoint, verify=False)
     _check_fail(svr_req, 'tickle server error')
     svr_json = json.dumps(svr_req.json(), ensure_ascii=False, indent=4)
 
-    print(svr_json)
+    logger.debug(svr_json)
+
+    return svr_req.json()
 
     """
     sample output:
@@ -803,12 +851,16 @@ def logout():
     base_url = f'https://{hostname}:5000/v1/api/'
     endpoint = f'logout'
 
+    logger.debug(f'url= {base_url}{endpoint}')
+
     svr_req = requests.get(url=base_url+endpoint, verify=False)
     _check_fail(svr_req, 'logout error')
     svr_json = json.dumps(svr_req.json(), ensure_ascii=False, indent=4)
 
-    print(svr_json)
+    logger.debug(svr_json)
 
+    return svr_req.json()
+    
     """
     sample output:
     {
