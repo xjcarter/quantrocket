@@ -148,9 +148,10 @@ def order_reply(reply_id, repeat=True):
 
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-    endpoint = f'iserver/reply/{reply_id}'
    
     while reply_id is not None:
+
+        endpoint = f'iserver/reply/{reply_id}'
 
         ## responding to 'are you sure?' reply
         json_body = { "confirmed": True }
@@ -457,7 +458,9 @@ def market_connect(contract_id):
 
     logger.info(f'market connected for conid= {contract_id}')
 
-    return True
+    contract_response = md_req.json()[0]
+    
+    return contract_id == contract_response.get('conid')
 
     """
     sample response:
@@ -528,6 +531,8 @@ def market_snapshot(contract_id):
     ## convert unix timestamp
     unix_ts = market_data['_updated']
     if unix_ts: market_data['_updated'] = unix_time_to_string(unix_ts) 
+
+    logger.debug(json.dumps(market_data, ensure_ascii=False, indent=4))
 
     return market_data
 
@@ -621,7 +626,7 @@ def current_position(contract_id):
     pos_json = json.dumps(pos_req.json(), ensure_ascii=False, indent=4)
     logger.debug(pos_json)
 
-    return pos_req.json()
+    return pos_req.json()[0]
 
     """
     sample response:
@@ -652,9 +657,9 @@ def current_position(contract_id):
     ]
     """
 
-
+                
 ## takes a list of symbols and returns contract ids specific to exchange
-def stock_to_contract_id(symbols_list):
+def fetch_contract_info(symbols_list):
     
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
@@ -770,6 +775,19 @@ def stock_to_contract_id(symbols_list):
     }
     """
 
+
+## finds the first listed US conid
+def symbol_to_contract_id(symbol):
+    contract_info = fetch_contract_info( [symbol] )
+    for c in contract_info.get(symbol):
+        contract_list = c.get('contracts')
+        if contract_list:
+            for conid_dict in contract_list:
+                if conid_dict.get('isUS'):
+                    return conid_dict.get('conid')
+    return None
+
+
 def status():
     
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
@@ -855,11 +873,13 @@ def logout():
 
     svr_req = requests.get(url=base_url+endpoint, verify=False)
     _check_fail(svr_req, 'logout error')
-    svr_json = json.dumps(svr_req.json(), ensure_ascii=False, indent=4)
+
+    j = svr_req.json()
+    svr_json = json.dumps(j, ensure_ascii=False, indent=4)
 
     logger.debug(svr_json)
 
-    return svr_req.json()
+    return j.get('status')
     
     """
     sample output:

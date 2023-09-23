@@ -7,7 +7,7 @@ from posmgr import PosMgr, TradeSide, Trade, OrderType
 import calendar_calcs
 from indicators import MondayAnchor, StDev
 import os, sys, json
-import ib_endpoints
+import ib_endpoints as IB
 
 
 import logging
@@ -29,7 +29,7 @@ class Lex(Strategy):
     def __init__(self, strategy_id, configuration_file):
         super().__init__(strategy_id, configuration_file)
 
-        self.order_monitor = ib_endpoints.OrderMonitor()
+        self.order_monitor = IB.OrderMonitor()
         self.pos_mgr = PosMgr()
         self.intra_prices = list()
         self.contract_id = None
@@ -104,12 +104,12 @@ class Lex(Strategy):
         try:
             last_print = self.intra_prices[-1] 
             bid, ask = last_print['bid'], last_print['ask']
-            bid_size, ask_size = last_print['bidsz'], last_print['asksz']
+            bid_size, ask_size = last_print['bid_sz'], last_print['ask_sz']
             if show_volume:
-                logger.info(f'current bid/ask for {self.symbol}: bid:{bid_price} ({bid_size}), ask:{ask_price} ({ask_size})')
+                logger.info(f'current bid/ask for {self.symbol}: bid:{bid} ({bid_size}), ask:{ask} ({ask_size})')
                 return bid, ask, bid_size, ask_size
             else:
-                logger.info(f'current bid/ask for {self.symbol}: bid:{bid_price}, ask:{ask_price}')
+                logger.info(f'current bid/ask for {self.symbol}: bid:{bid}, ask:{ask}')
                 return bid, ask
 
         except RuntimeError(e):
@@ -118,8 +118,11 @@ class Lex(Strategy):
 
 
     def fetch_prices(self):
-        market_data = ib_endpoints.market_snapshot(self.contract_id) 
-        self.intra_prices.append(market_data)
+        market_data = IB.market_snapshot(self.contract_id) 
+        ## ensure that a price quote was posted. 
+        ## sometime the first call only establishes a connection
+        if market_data.get('last'):
+            self.intra_prices.append(market_data)
 
     def check_exit(self, position_node, stdv):
 
@@ -151,15 +154,16 @@ class Lex(Strategy):
 
         logger.info('sending order.')
 
-        order_info = ib_endpoints.order_request(self.contract_id, order_type.value, side.value, amount)
+        order_info = IB.order_request(self.contract_id, order_type.value, side.value, amount)
         if order_info.get('reply_id') is not None:
             ## confirm to server that you want to send this order
-            order_info = ib_endpoints.order_reply(order_info['reply_id'])
+            ## repeat flag forces all subsequent rder_replies to be resolved before returning
+            order_info = IB.order_reply(order_info['reply_id'], repeat=True)
 
         logger.info(f'order_id: {order_id} submitted.')
 
         order_info = {
-            'order_id': order_id,
+            'order_id': order_info['order_id'],
             'symbol': self.symbol,
             'quantity': amount,
             'side': side.value,
@@ -231,16 +235,16 @@ class Lex(Strategy):
         return trade_capital
 
     def reconcile_positions(self):
-        ib_position_info = ib_endpoints.current_position(self.contract_id)
+        ib_position_info = IB.current_position(self.contract_id)
         ib_position, ib_avgp = ib_position_info['position'], ib_position_info['avgPrice']
         pos_node = self.pos_mgr.get_position(self.symbol)
         lex_position, lex_avgp = pos_node.position, pos_node.price
         logger.info(f'reconciling positions: ')
-        logger.info(f'IB: {ib_position} @ {ib_avgp:.4f}, Lex: {lex_position} @ {lex_avgp:.4f}')
+        logger.info(f'IB: {ib_position} @ {ib_avgp:.4f}, PosMgr: {lex_position} @ {lex_avgp:.4f}')
         if ib_avgp != lex_avgp:
-            logger.critical('IB and Lex avg_costs do not match!')
+            logger.critical('IB and PosMgr avg_costs do not match!')
         if ib_position != lex_position:
-            logger.critical('IB and Lex positions do not match!')
+            logger.critical('IB and PosMgr positions do not match!')
             raise RuntimeError
 
     def run_strategy(self):
@@ -258,7 +262,7 @@ class Lex(Strategy):
 
         ## grab the only instrument in the universe
         self.symbol = self.cfg['universe'][0]
-        self.contract_id = ib_endpoints.stock_to_contract_id(self.symbol)
+        self.contract_id = IB.symbol_to_contract_id(self.symbol)
 
         ## returns a PosNode object
         position_node = self.pos_mgr.get_position(self.symbol)
@@ -273,12 +277,20 @@ class Lex(Strategy):
 
         
         logger.info(f'pinging IB server.')
-        ib_endpoints.tickle()
+        ping = IB.tickle()
+        logger.info(json.dumps(ping, ensure_ascii=False, indent=4 ))
 
         logger.info(f'initialize market data connection for symbol= {self.symbol}, contract_id= {self.contract_id}')
-        market_init = ib_endpoints.market_connect(self.contract_id)
+        market_init = IB.market_connect(self.contract_id)
+        if not market_init:
+            logger.critical(f'market data initialization failed. conid= {self.contract_id}')
+
         logger.info('fetch account information from IB')
-        account_info = ib_endpoints.account_summary(self.contract_id)
+        account_info = IB.account_summary()
+        account_file = f'{strategy_id}.account_info.json'
+        with open(account_file, 'w') as f:
+            acc_info = json.dumps(account_info, ensure_ascii=False, indent=4)
+            f.write(acc_info)
 
         time.sleep(5)
 
@@ -321,7 +333,7 @@ class Lex(Strategy):
                         elif fire_entry:
                             logger.warning('entry triggered but trade_amt == 0!')
                     else:
-                        logger.info(f'no trade: working open position: {symbol} {current_pos}')
+                        logger.info(f'no trade: working open position: {self.symbol} {current_pos}')
 
             for fill in self.order_monitor.check_orders():
                 self.process_fill(fill)
@@ -330,7 +342,7 @@ class Lex(Strategy):
                 if closing:
                     position_node = self.pos_mgr.get_position(self.symbol)
                     fire_exit, current_pos = self.check_exit(position_node, stdv)
-                    logger.info(f'{symbol} {current_pos}, fire_exit = {fire_exit}')
+                    logger.info(f'{self.symbol} {current_pos}, fire_exit = {fire_exit}')
                     if fire_exit: 
                         order_info = self.create_order(TradeSide.SELL, current_pos, order_notes=self.strategy_id)
                         self.pos_mgr.register_order(order_info)
@@ -339,15 +351,14 @@ class Lex(Strategy):
                 if end_of_day:
                     today = datetime.today().strftime("%Y%m%d")
                     self.create_directory(f'{self.cfg["intraday_prices_dir"]}/{self.strategy_id}/')
-                    intra_file = f'{self.cfg["intraday_prices_dir"]}/{self.strategy_id}/{symbol}.{today}.csv'
+                    intra_file = f'{self.cfg["intraday_prices_dir"]}/{self.strategy_id}/{self.symbol}.{today}.csv'
                     logger.info('saving intraday prices ...')
                     self.dump_intraday_prices(intra_file) 
                     logger.info('updating position durations ...')
                     self.pos_mgr.update_durations()
                     logger.info('end of day completed.')
-                    logger.info('logging out.')
-                    ib_endpoints.logout()
-
+                    logout = IB.logout()
+                    logger.info(f'logged out = {logout}')
                     break
 
             time.sleep(1)
