@@ -1,12 +1,12 @@
-import requests
 import json
-import urllib3
 import os
 import re
 import sys
-from clockutils import timestamp_string, unix_time_to_string 
-
 import logging
+import urllib3
+import requests
+from clockutils import timestamp_string, unix_time_to_string
+
 # Create a logger specific to __main__ module
 logger = logging.getLogger(__name__)
 #logger.setLevel(logging.INFO)
@@ -38,9 +38,9 @@ def _fmtn(number_string):
         # Remove commas and dollar signs, then convert to a float
         cleaned_number = float(numbers[0].replace(',', '').replace('$', ''))
         return cleaned_number
-    else:
-        # Return None if no numbers are found in the string
-        return None
+
+    # Return None if no numbers are found in the string
+    return None
 
 
 def _check_fail(req, msg):
@@ -52,18 +52,18 @@ def _check_fail(req, msg):
         err_msg = f'{msg}: status_code= {req.status_code}, Bad request'
         logger.error(err_msg)
         raise RuntimeError(err_msg)
-    elif req.status_code == 401:
+    if req.status_code == 401:
         err_msg = f'{msg}: status_code= {req.status_code}, Unauthorized to access endpoint'
         logger.error(err_msg)
         raise RuntimeError(err_msg)
-    elif req.status_code == 404:
+    if req.status_code == 404:
         err_msg = f'{msg}: status_code= {req.status_code}, endpoint Not Found'
         logger.error(err_msg)
         raise RuntimeError(err_msg)
-    else:
-        err_msg = f'{msg}: status_code= {req.status_code}'
-        logger.error(err_msg)
-        raise RuntimeError(err_msg)
+
+    err_msg = f'{msg}: status_code= {req.status_code}'
+    logger.error(err_msg)
+    raise RuntimeError(err_msg)
 
 
 def order_request(contract_id, order_type, side, qty, tgt_price=None, lmt_price=None):
@@ -80,7 +80,7 @@ def order_request(contract_id, order_type, side, qty, tgt_price=None, lmt_price=
                     "tif": "DAY",
                     "quantity": qty
                 }
-    
+
     if order_type in ['STP', 'LMT']:
         ## tgt_price drives both limit and stop orders
         if tgt_price is not None:
@@ -104,7 +104,7 @@ def order_request(contract_id, order_type, side, qty, tgt_price=None, lmt_price=
     _check_fail(order_req, 'couldnt place order')
     order_json = json.dumps(order_req.json(), ensure_ascii=False, indent=4)\
 
-    logger.debug(order_json) 
+    logger.debug(order_json)
 
     record = order_req.json()[0]
 
@@ -148,7 +148,7 @@ def order_reply(reply_id, repeat=True):
 
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-   
+
     while reply_id is not None:
 
         endpoint = f'iserver/reply/{reply_id}'
@@ -172,7 +172,7 @@ def order_reply(reply_id, repeat=True):
             'reply_id': record.get('id'),
             'reply_message': record.get('message')
         }
-        
+
         new_reply_id = order_info.get('reply_id')
         if repeat and new_reply_id:
             if new_reply_id != reply_id:
@@ -203,11 +203,14 @@ def order_reply(reply_id, repeat=True):
     """
 
 
-def order_status(filters=['inactive', 'cancelled', 'filled']):
+def order_status(filters=None):
 
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-    endpoint = f'iserver/account/orders'
+    endpoint = 'iserver/account/orders'
+
+    if filters is None:
+        filters = ['inactive', 'cancelled', 'filled']
 
     filter_codes = ['inactive', 'pending_submit', 'pre_submitted', 'submitted',
                     'filled', 'pending_cancel', 'cancelled', 'warn_state', 'sort_by_time' ]
@@ -218,7 +221,7 @@ def order_status(filters=['inactive', 'cancelled', 'filled']):
             my_filters.append(f)
         else:
             logger.error(f'order filter: {f} not valid.')
-   
+
     filters_string = ",".join(my_filters)
     request_url = base_url+endpoint
 
@@ -233,7 +236,7 @@ def order_status(filters=['inactive', 'cancelled', 'filled']):
     fill_json = json.dumps(fill_req.json(), ensure_ascii=False, indent=4)
     logger.debug(fill_json)
 
-    return fill_req.json().get('orders') 
+    return fill_req.json().get('orders')
 
     """
     first call will 'connect' to get order status -
@@ -310,7 +313,7 @@ def order_status(filters=['inactive', 'cancelled', 'filled']):
 
 
 ### this was a test helper function
-### it replaces the order_status() call 
+### it replaces the order_status() call
 ### inside the OrderMonitor.monitor_orders() method
 TESTFILE_COUNTER = 0
 def mock_order_status():
@@ -328,9 +331,9 @@ def mock_order_status():
     return None
 
 
-class OrderMonitor(object):
+class OrderMonitor():
     def __init__(self):
-        self.last_orders = dict() 
+        self.last_orders = dict()
 
     def _generate_fill(self, current_order):
 
@@ -339,33 +342,33 @@ class OrderMonitor(object):
         price = 'avgPrice'
 
         fill = dict()
-        
+
         number_of_fills = 1
         n_order_id = current_order['orderId']
-        last_order = self.last_orders.get(n_order_id) 
+        last_order = self.last_orders.get(n_order_id)
         if last_order is not None:
             if current_order[remaining] != 0 and last_order[remaining] == current_order[remaining]:
-                ## nothing has changed 
+                ## nothing has changed
                 return None
-            else:
-                number_of_fills = last_order['number_of_fills'] + 1
 
-                filled_qty = float(current_order[filled])
-                last_qty = float(last_order[filled])
+            number_of_fills = last_order['number_of_fills'] + 1
 
-                if filled_qty < last_qty:
-                    ## the updated total fill amount DECREASED - throw error
-                    err_msg = f'filled_qty: {filled_qty} < last_qty {last_qty}'
-                    logger.error(err_msg)
-                    raise RuntimeError(err_msg)
+            filled_qty = float(current_order[filled])
+            last_qty = float(last_order[filled])
 
-                filled_price = float(current_order[price])
-                last_price = float(last_order[price])
+            if filled_qty < last_qty:
+                ## the updated total fill amount DECREASED - throw error
+                err_msg = f'filled_qty: {filled_qty} < last_qty {last_qty}'
+                logger.error(err_msg)
+                raise RuntimeError(err_msg)
 
-                ## calc partial fill amount and price
-                residual = filled_qty - last_qty
-                residual_price = ((filled_qty*filled_price) - (last_qty*last_price)) / residual
-                fill.update({ 'qty':residual, 'price': residual_price})
+            filled_price = float(current_order[price])
+            last_price = float(last_order[price])
+
+            ## calc partial fill amount and price
+            residual = filled_qty - last_qty
+            residual_price = ((filled_qty*filled_price) - (last_qty*last_price)) / residual
+            fill.update({ 'qty':residual, 'price': residual_price})
         else:
             fill.update({ 'qty': float(current_order[filled]), 'price': float(current_order[price]) })
 
@@ -373,8 +376,8 @@ class OrderMonitor(object):
         self.last_orders[n_order_id]['number_of_fills'] = number_of_fills
 
         tms= 'lastExecutionTime_r'
-        fill['order_id'] = n_order_id 
-        fill['trade_id'] = f'{n_order_id}-{number_of_fills:04d}' 
+        fill['order_id'] = n_order_id
+        fill['trade_id'] = f'{n_order_id}-{number_of_fills:04d}'
         fill['ticker'] = current_order['ticker']
         fill['side'] = current_order['side']
         fill['conidex'] = current_order['conidex']
@@ -389,7 +392,7 @@ class OrderMonitor(object):
 
     def monitor_orders(self):
 
-        ## call the endpoint to grab all current orders 
+        ## call the endpoint to grab all current orders
         orders = order_status()
         ## FOR TESTING!!! orders = mock_order_status()
 
@@ -410,7 +413,7 @@ class OrderMonitor(object):
 
     """
     tested.
-    sample output from  'for fill in order_monitor.monitor_orders():' 
+    sample output from  'for fill in order_monitor.monitor_orders():'
 
     processed fill: {
         "qty": 100.0,
@@ -435,16 +438,16 @@ class OrderMonitor(object):
     {'qty': 100.0, 'price': '176.32', 'order_id': 1149239278, 'trade_id': '1149239278-0001', 'ticker': 'AAPL', 'side': 'BUY', 'conidex': '265598', 'lastExecutionTime_r': 1694531884000}
     {'qty': 100.0, 'price': '176.49', 'order_id': 1149239268, 'trade_id': '1149239268-0001', 'ticker': 'AAPL', 'side': 'BUY', 'conidex': '265598', 'lastExecutionTime_r': 1694531314000}
     """
-                        
-      
+
+
 ##initializes market subscription - call before snapshot
 def market_connect(contract_id):
-    
+
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-    endpoint = f'iserver/marketdata/snapshot'
+    endpoint = 'iserver/marketdata/snapshot'
 
-    fields=f'fields=55'
+    fields='fields=55'
 
     params = "&".join([f'conids={contract_id}', fields])
     request_url = "".join([base_url, endpoint, "?", params])
@@ -459,7 +462,7 @@ def market_connect(contract_id):
     logger.info(f'market connected for conid= {contract_id}')
 
     contract_response = md_req.json()[0]
-    
+
     return contract_id == contract_response.get('conid')
 
     """
@@ -474,16 +477,16 @@ def market_connect(contract_id):
 
 
 def market_snapshot(contract_id):
-    
+
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-    endpoint = f'iserver/marketdata/snapshot'
+    endpoint = 'iserver/marketdata/snapshot'
 
     def _v_x100(v):
         v = _fmtn(v)
         if v is None: return v
         return int(v) * 100
- 
+
     def _int(v):
         v = _fmtn(v)
         if v is None: return v
@@ -524,13 +527,13 @@ def market_snapshot(contract_id):
     market_data = dict([ (k, v[1](data_dict.get(v[0])) ) for k,v in field_dict.items() ])
     dd, tt = timestamp_string(split_date_and_time=True)
     market_data.update( { 'date': dd, 'time': tt } )
-    
+
     ## tack on non 'number_tagged' fields
     for add_on in [ 'conid', '_updated' ]:
         market_data.update( { add_on: data_dict.get(add_on) } )
     ## convert unix timestamp
     unix_ts = market_data['_updated']
-    if unix_ts: market_data['_updated'] = unix_time_to_string(unix_ts) 
+    if unix_ts: market_data['_updated'] = unix_time_to_string(unix_ts)
 
     logger.debug(json.dumps(market_data, ensure_ascii=False, indent=4))
 
@@ -572,9 +575,9 @@ def market_snapshot(contract_id):
         "_updated": "20230913-17:14:59"
     }
     """
-        
+
 def account_summary():
-    
+
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     account = os.getenv('IB_ACCOUNT', 'DU7631004')
     base_url = f'https://{hostname}:5000/v1/api/'
@@ -613,7 +616,7 @@ def account_summary():
 
 
 def current_position(contract_id):
-    
+
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     account = os.getenv('IB_ACCOUNT', 'DU7631004')
     base_url = f'https://{hostname}:5000/v1/api/'
@@ -657,13 +660,13 @@ def current_position(contract_id):
     ]
     """
 
-                
+
 ## takes a list of symbols and returns contract ids specific to exchange
 def fetch_contract_info(symbols_list):
-    
+
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-    endpoint = f'trsrv/stocks'
+    endpoint = 'trsrv/stocks'
 
     syms = ",".join([x.upper() for x in symbols_list])
     symbols = f'symbols={syms}'
@@ -789,10 +792,10 @@ def symbol_to_contract_id(symbol):
 
 
 def status():
-    
+
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-    endpoint = f'iserver/auth/status'
+    endpoint = 'iserver/auth/status'
 
     logger.debug(f'url= {base_url}{endpoint}')
 
@@ -822,10 +825,10 @@ def status():
 
 
 def tickle():
-    
+
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-    endpoint = f'tickle'
+    endpoint = 'tickle'
 
     logger.debug(f'url= {base_url}{endpoint}')
 
@@ -864,10 +867,10 @@ def tickle():
     """
 
 def logout():
-    
+
     hostname = os.getenv('IB_WEB_HOST', 'localhost')
     base_url = f'https://{hostname}:5000/v1/api/'
-    endpoint = f'logout'
+    endpoint = 'logout'
 
     logger.debug(f'url= {base_url}{endpoint}')
 
@@ -880,10 +883,10 @@ def logout():
     logger.debug(svr_json)
 
     return j.get('status')
-    
+
     """
     sample output:
     {
         "status": true
-    } 
+    }
     """

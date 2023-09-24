@@ -1,15 +1,15 @@
 
-import json 
+import json
 import fcntl
 from datetime import datetime
 import re
 import os
-import pandas
 from enum import Enum
+import logging
+import pandas
 import mysql.connector
 import calendar_calcs
 
-import logging
 # Create a logger specific to __main__ module
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -26,7 +26,7 @@ logger.addHandler(console_handler)
 ## position node for each name traded
 ## all nodes are saved to a state file to be loaded and updated by the trading engine each day
 ## framework for loading daily trades and names to trade
-## 
+##
 
 
 PORTFOLIO_DIRECTORY = os.environ.get('PORTFOLIO_DIRECTORY', '/home/jcarter/junk/portfolio/')
@@ -42,13 +42,13 @@ class OrderType(str, Enum):
     STOP_LIMIT = 'STOP_LIMIT'
 
 
-class PosNode(object):
+class PosNode():
     def __init__(self, name):
         self.name = name
         self.position = 0
         self.duration = 0
         self.price = 0
-        self.timestamp = '' 
+        self.timestamp = ''
 
     def clear(self):
         self.position = 0
@@ -76,17 +76,17 @@ class PosNode(object):
         now = datetime.now()
         self.timestamp = now.strftime("%Y%m%d-%H:%M:%S")
 
-class Order(object):
+class Order():
     def __init__(self):
         self.order_id = None
-        self.symbol = None 
+        self.symbol = None
         self.qty = 0
         self.open_qty = 0
         self.side = 0
         self.order_type = 0
         self.order_target = 0
         self.timestamp = None
-        self.info = None 
+        self.info = None
 
     def to_dict(self):
         m = dict()
@@ -108,14 +108,14 @@ class Order(object):
         now = datetime.now()
         self.timestamp = now.strftime("%Y%m%d-%H:%M:%S")
 
-## 
+##
 ## capital allocation node
 ## shows cash available 'cash' to total cash allocated across all accounts for the strategy 'total_cash'
 ##
 
-class AllocNode(object):
+class AllocNode():
     def __init__(self, account_id):
-        self.account_id = account_id 
+        self.account_id = account_id
         self.cash = 0
         self.timestamp = ''
 
@@ -140,19 +140,19 @@ class AllocNode(object):
         self.timestamp = now.strftime("%Y%m%d-%H:%M:%S")
 
 
-class Trade(object):
+class Trade():
     def __init__(self, trade_id=None ):
         ## execution id for the trade
         self.trade_id = trade_id
         ## originating order_id associated with this trade,
         ## ie multiple trade_ids can belong to a single order_id (split fills)
-        self.order_id = None 
+        self.order_id = None
         self.side = None
         self.asset = None
         self.units = 0
         self.price = 0
         self.commission = 0
-        self.fees = 0 
+        self.fees = 0
         self.broker = None
         self.exchange = None
         self.timestamp = None
@@ -167,7 +167,7 @@ class Trade(object):
     def __setattr__(self, name, value):
         if name in ['units', 'price', 'commissions', 'fees']:
             value = float(value)
-        super.__setattr__(self, name, value)
+        super().__setattr__(self, name, value)
 
     def from_dict(self, json_dict):
         for k, v in json_dict.items():
@@ -179,7 +179,7 @@ class Trade(object):
         new_trade = Trade()
         new_trade.__dict__.update(self.__dict__)
         return new_trade
-    
+
     def convert_timestamp(self, timestamp):
         if isinstance(timestamp, datetime):
             self.timestamp = timestamp.strftime('%Y%m%d-%H:%M:%S')
@@ -189,18 +189,18 @@ class Trade(object):
     def stamp_timestamp(self):
         now = datetime.now()
         self.timestamp = now.strftime('%Y%m%d-%H:%M:%S')
-    
 
-class PosMgr(object):
+
+class PosMgr():
     def __init__(self):
         self.strategy_id = None
-        self.universe = None 
+        self.universe = None
         self.order_ledger = dict()
 
         ## current names to trade w/ current positions
         self.positions = []
         ## incremental detail of position changes
-        self.position_detail = []  
+        self.position_detail = []
         ## allocations per account for all the strategy trades
         self.allocations = []
         ## total cash available to initiate new positions
@@ -241,11 +241,11 @@ class PosMgr(object):
     def read_positions_and_allocations(self):
 
         ## Directory where the files are located
-        directory = f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/positions/' 
+        directory = f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/positions/'
 
         ## Regex pattern to match the file names
         ## position filename format = <Strategy_id>.positions.<YYYYMMDD>.json
-        regex_pattern = fr'{self.strategy_id}\.positions\.\d{{8}}\.json' 
+        regex_pattern = fr'{self.strategy_id}\.positions\.\d{{8}}\.json'
 
         sorted_files = []
         if os.path.exists(directory):
@@ -263,14 +263,14 @@ class PosMgr(object):
             file_path = os.path.join(directory, most_recent_file)
             with open(file_path, 'r') as file:
                 pos_json = json.load(file)
-                
+
                 ## json file expected is as follows:
                 ##
                 ## {
                 ##     'positions': [ array of PosNodes: { name, position, duration, price, timestamp } ],
                 ##     'position_detail': [ array of position updates: { name, side, units, old_position, new_position, timestamp } ],
                 ##     'allocations:' [ array of AllocNode: { accountId, cash} ]
-                ##     'total_allocation': sum of cash allocations 
+                ##     'total_allocation': sum of cash allocations
                 ## }
                 ##
 
@@ -285,7 +285,7 @@ class PosMgr(object):
                             pos_map[name].append(n)
                         except KeyError:
                             pos_map[name] = [n]
-                    
+
                 alloc_nodes = pos_json.get('allocations', [])
                 total_allocation = pos_json.get('total_allocation',0)
 
@@ -294,27 +294,27 @@ class PosMgr(object):
 
         return pos_map, alloc_nodes, total_allocation
 
-    
+
     ## recover position detail and trade detail information from
     ## the CURRENT trading day - in situations where there was a program restart
     def recover_current_detail(self):
         today = datetime.today().strftime("%Y%m%d")
 
-        directory = f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/positions/' 
-        pos_file = f'{self.strategy_id}.positions.{today}.json' 
+        directory = f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/positions/'
+        pos_file = f'{self.strategy_id}.positions.{today}.json'
 
-        pos_detail = [] 
+        pos_detail = []
         file_path = os.path.join(directory, pos_file)
         if os.path.exists(file_path):
             with open(file_path, 'r') as file:
                 pos_json = json.load(file)
                 pos_detail = pos_json.get('position_detail', [])
 
-        directory = f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/trades/' 
-        trade_file = f'{self.strategy_id}.trades.{today}.json' 
-        orders_file = f'{self.strategy_id}.orders.{today}.json' 
+        directory = f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/trades/'
+        trade_file = f'{self.strategy_id}.trades.{today}.json'
+        orders_file = f'{self.strategy_id}.orders.{today}.json'
 
-        trade_detail = [] 
+        trade_detail = []
         file_path = os.path.join(directory, trade_file)
         if os.path.exists(file_path):
             with open(file_path, 'r') as file:
@@ -329,7 +329,7 @@ class PosMgr(object):
                 orders_json = json.load(file)
                 for order_dict in orders_json:
                     recovered_order = Order()
-                    self.order_ledger[ order_dict['order_id'] ] = recovered_order.from_dict(order_dict) 
+                    self.order_ledger[ order_dict['order_id'] ] = recovered_order.from_dict(order_dict)
 
         return pos_detail, trade_detail
 
@@ -339,7 +339,7 @@ class PosMgr(object):
             ## get the attribute names of the first PosNode to use as columns
             cols = self.positions[0].keys()
             df = pandas.DataFrame(columns=cols, data=self.positions)
-            return df 
+            return df
 
         return None
 
@@ -386,7 +386,7 @@ class PosMgr(object):
         cursor.close()
         connection.close()
 
-        total_cash = 0 
+        total_cash = 0
         alloc_nodes = []
         for row in results:
             account_id, cash, timestamp = row
@@ -410,16 +410,16 @@ class PosMgr(object):
 
         self.strategy_id = strategy_id
         self.universe = set(universe_list)
-        ## give back a map of pos nodes, indexed by names,  
+        ## give back a map of pos nodes, indexed by names,
         ## and the allocation breakdown for accounts
         ## and the sum of all allocations
         pos_map, alloc_nodes, total_allocation = self.read_positions_and_allocations()
 
-        ## recover CURRENT day detail in the case of program restart 
-        self.position_detail, self.trades = self.recover_current_detail() 
+        ## recover CURRENT day detail in the case of program restart
+        self.position_detail, self.trades = self.recover_current_detail()
 
 
-        open_positions = 0 
+        open_positions = 0
         newbies= []
         for name in self.universe:
             pos_nodes = pos_map.get(name)
@@ -442,7 +442,7 @@ class PosMgr(object):
                     ## map returned multiple pos nodes for a specific name
                     logger.warning(f'duplicate positions found for {name}.')
                     logger.warning(json.dumps(pos_nodes, ensure_ascii=False, indent =4 ))
-       
+
         if len(newbies) > 0:
             logger.info(f'created following new position nodes:')
             nn = [ x.to_dict() for x in newbies ]
@@ -466,7 +466,7 @@ class PosMgr(object):
             logger.warning(json.dumps(zz, ensure_ascii=False, indent =4 ))
 
 
-        ## check allocations 
+        ## check allocations
         if open_positions != 0:
             self.trade_capital = 0
             logger.info('using previous allocations on open positions')
@@ -481,8 +481,8 @@ class PosMgr(object):
             else:
                 logger.error('no allocations posted for open positions')
         else:
-            ## fetch new allocations 
-            ## for a clean slate of zero positions 
+            ## fetch new allocations
+            ## for a clean slate of zero positions
             alloc_nodes, self.trade_capital = self._fetch_cash_allocations(self.strategy_id)
 
         self.allocations = alloc_nodes
@@ -498,7 +498,7 @@ class PosMgr(object):
             return [ f(x) for x in lst ]
 
         ## sorts orders by timestamp
-        
+
         sorted_orders = sorted( _to_dict(self.order_ledger.values()), key=lambda x: x['timestamp'])
 
         tdy = now.strftime("%Y%m%d")
@@ -520,7 +520,7 @@ class PosMgr(object):
         def _to_dict(lst):
             f = lambda x: x if isinstance(x,dict) else x.to_dict()
             return [ f(x) for x in lst ]
-    
+
         ## sorts current detail by name, then timestamp
         sorted_detail = sorted(self.position_detail, key=lambda x: (x['name'], x['timestamp']))
 
@@ -529,8 +529,8 @@ class PosMgr(object):
         newdir =f'{PORTFOLIO_DIRECTORY}/{self.strategy_id}/positions/'
         self.create_directory(newdir)
         position_file = f'{newdir}/{self.strategy_id}.positions.{tdy}.json'
-        pp = { 'positions': _to_dict(self.positions), 
-               'position_detail': sorted_detail, 
+        pp = { 'positions': _to_dict(self.positions),
+               'position_detail': sorted_detail,
                'allocations': _to_dict(self.allocations),
                'total_allocation': self.trade_capital
              }
@@ -576,7 +576,7 @@ class PosMgr(object):
         order.order_target = order_info.get('order_target')
         order.stamp_with_time()
 
-        self.order_ledger[ order.order_id ] = order 
+        self.order_ledger[ order.order_id ] = order
         self.write_orders( datetime.now() )
 
 
@@ -586,8 +586,8 @@ class PosMgr(object):
             x = abs(curr_pos)
             y = abs(new_pos)
             avp = (( x * curr_price ) + ( y* new_price)) / ( x+ y)
-            return round(avp, 5) 
-        
+            return round(avp, 5)
+
 
         new_node = pos_node.copy()
         if pos_node.position > 0:
@@ -600,7 +600,7 @@ class PosMgr(object):
                     new_node.price = trade_obj.price
                 else:
                     new_node.price = 0
-        ## manage short positions 
+        ## manage short positions
         elif pos_node.position  < 0:
             if trade_obj.side == TradeSide.SELL:
                 new_node.price = _calc_avg_price(pos_node.position, pos_node.price, trade_obj.units, trade_obj.price)
@@ -620,7 +620,7 @@ class PosMgr(object):
         new_node.timestamp = trade_obj.timestamp
 
         ## record trade that affected the current position
-        pos_detail = dict() 
+        pos_detail = dict()
         pos_detail['name'] = new_node.name
         pos_detail['prev_position'] = pos_node.position
         pos_detail['current_position'] = new_node.position
@@ -634,7 +634,7 @@ class PosMgr(object):
 
     ## update duration on open positions (AT EOD)
     def update_durations(self):
-        for idx, pos_node in enumerate(self.positions):
+        for _, pos_node in enumerate(self.positions):
             if pos_node.position != 0:
                 pos_node.duration += 1
                 d = pos_node.duration
@@ -643,7 +643,7 @@ class PosMgr(object):
         now = datetime.now()
         self.write_positions(now)
 
-    ## take a new trade and update positions 
+    ## take a new trade and update positions
     ## and update position and trade files
     def update_trades(self, trade_object, conversion_func=None):
 
@@ -654,7 +654,7 @@ class PosMgr(object):
             vals = [ x.strip() for x in trade_string.split(',') ]
             cols = [ 'trade_id', 'side', 'asset', 'units', 'price' ]
             t_obj = Trade()
-            t_obj.from_dict( dict(zip(cols, vals)) ) 
+            t_obj.from_dict( dict(zip(cols, vals)) )
             t_obj.stamp_timestamp()
 
             return t_obj
@@ -669,7 +669,7 @@ class PosMgr(object):
 
         ## make sure you are not re-processing the same trade
         processed_trade_ids = [ x['trade_id'] for x in self.trades ]
-        new_trade = trade_obj.trade_id not in processed_trade_ids 
+        new_trade = trade_obj.trade_id not in processed_trade_ids
 
         if new_trade:
             self.trades.append(trade_obj.to_dict())
@@ -698,7 +698,7 @@ class PosMgr(object):
 
             for idx, pos_node in enumerate(self.positions):
                 if pos_node.name == trade_obj.asset:
-                    new_node, new_detail = self.update_positions(pos_node, trade_obj) 
+                    new_node, new_detail = self.update_positions(pos_node, trade_obj)
                     self.position_detail.append(new_detail)
                     self.positions[idx] = new_node
 
@@ -711,7 +711,7 @@ class PosMgr(object):
 
 
 if __name__ == "__main__":
-    
+
     pmgr = PosMgr()
     pmgr.initalize('Strategy1', ['AAPL','SPY','QQQ'])
 
@@ -726,6 +726,6 @@ if __name__ == "__main__":
     #pmgr.update_trades(fake_trade)
 
 
-   
+
 
 
