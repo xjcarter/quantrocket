@@ -30,6 +30,7 @@ logger.addHandler(console_handler)
 
 
 PORTFOLIO_DIRECTORY = os.environ.get('PORTFOLIO_DIRECTORY', '/home/jcarter/junk/portfolio/')
+MYSQL_HOSTNAME = os.environ.get('MYSQL_HOSTNAME', 'localhost')
 
 class TradeSide(str, Enum):
     BUY = 'BUY'
@@ -167,7 +168,7 @@ class Trade():
     def __setattr__(self, name, value):
         if name in ['units', 'price', 'commissions', 'fees']:
             value = float(value)
-        super().__setattr__(self, name, value)
+        super().__setattr__(name, value)
 
     def from_dict(self, json_dict):
         for k, v in json_dict.items():
@@ -348,7 +349,7 @@ class PosMgr():
 
         # Connect to the 'Operations' database
         connection = mysql.connector.connect(
-            host="localhost",  # Replace with your MySQL server host
+            host=MYSQL_HOSTNAME,  # Replace with your MySQL server host
             user="root",  # Replace with your MySQL username
             password="tarzan001",  # Replace with your MySQL password
             database="Operations"
