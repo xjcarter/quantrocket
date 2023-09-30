@@ -714,7 +714,7 @@ class PosMgr():
 if __name__ == "__main__":
 
     pmgr = PosMgr()
-    pmgr.initalize('Strategy1', ['AAPL','SPY','QQQ'])
+    pmgr.initialize('Strategy1', ['AAPL','SPY','QQQ'])
 
     logger.info(pmgr.positions)
 
