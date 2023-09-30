@@ -718,12 +718,12 @@ if __name__ == "__main__":
 
     logger.info(pmgr.positions)
 
-    fake_trade = '12513, Strategy1, BUY, SPY, 50, 419.00'
+    fake_trade = '12513, BUY, SPY, 50, 419.00'
     pmgr.update_trades(fake_trade)
 
-    #fake_trade = '12511, Strategy1, SELL, SPY, 43, 461.66'
+    #fake_trade = '12511, SELL, SPY, 43, 461.66'
     #pmgr.update_trades(fake_trade)
-    #fake_trade = '12511, Strategy1, BUY, SPY, 120, 470.66'
+    #fake_trade = '12511, BUY, SPY, 120, 470.66'
     #pmgr.update_trades(fake_trade)
 
 
