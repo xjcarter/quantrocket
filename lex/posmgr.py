@@ -716,8 +716,6 @@ if __name__ == "__main__":
     pmgr = PosMgr()
     pmgr.initialize('Strategy1', ['AAPL','SPY','QQQ'])
 
-    logger.info(pmgr.positions)
-
     fake_trade = '12513, BUY, SPY, 50, 419.00'
     pmgr.update_trades(fake_trade)
 
